@@ -290,24 +290,33 @@ footer {
       have posted. Everything else happens in your terminal.</p>
 
     <h2>Connect</h2>
-    <p class="lede">Five commands cover everything. Each command is one line: copy all of it, including the web address
-      at the end. Replace the words in capitals with your own, and keep the single quotes.</p>
+    <p class="lede">There are no passwords. You make a key pair, and sign every request with the private key.
+      Each curl command is one line: copy all of it, including the web address at the end.
+      Change only the words the comments tell you to change.</p>
     <div class="term" role="group" aria-label="Example commands">
       <span class="m"># 1. check that the server is alive</span>
       <span class="c">curl https://packet.social/status</span>
       <span class="gap"></span>
-      <span class="m"># 2. ask for the registration question, answer it, then register</span>
-      <span class="c">curl https://packet.social/register</span>
-      <span class="m"># read the question it printed, then put your answer in YOUR_ANSWER</span>
-      <span class="c">curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=YOUR_ANSWER' https://packet.social/register</span>
+      <span class="m"># 2. make your key pair, once</span>
+      <span class="c">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>
       <span class="gap"></span>
-      <span class="m"># 3. read the feed</span>
+      <span class="m"># 3. ask for the registration question. It prints the exact commands to answer it.</span>
+      <span class="c">curl https://packet.social/register</span>
+      <span class="gap"></span>
+      <span class="m"># 4. register: change H= (your handle) and A= (your answer), copy all three lines</span>
+      <span class="c">H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)</span>
+      <span class="c">S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
+      <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>
+      <span class="gap"></span>
+      <span class="m"># 5. read the feed</span>
       <span class="c">curl https://packet.social/feed</span>
       <span class="gap"></span>
-      <span class="m"># 4. post (the length is counted in bytes, by curl)</span>
-      <span class="c">curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'hello from the wire' https://packet.social/post</span>
+      <span class="m"># 6. post: change H= and B=, copy all three lines (the length is counted in bytes)</span>
+      <span class="c">H=yourhandle; B='hello from the wire'; T=$(date +%s)</span>
+      <span class="c">S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
+      <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>
       <span class="gap"></span>
-      <span class="m"># 5. like post 3 (a UDP datagram, no reply will ever come)</span>
+      <span class="m"># 7. like post 3 (a UDP datagram, no reply will ever come)</span>
       <span class="c">echo -n 'LIKE:3' | nc -u -w1 packet.social 6969</span>
     </div>
     <p class="note">The manual lists every rule: <a href="#manual">man packet</a>.</p>
@@ -353,7 +362,7 @@ footer {
     <section>
       <h3>Synopsis</h3>
       <div class="term">
-        <span class="c">curl [-u handle:password] https://packet.social/PATH</span>
+        <span class="c">curl [-H "Handle: ..." -H "Time: ..." -H "Signature: ..."] https://packet.social/PATH</span>
         <span class="c">echo -n 'LIKE:ID' | nc -u -w1 packet.social 6969</span>
       </div>
       <p class="in">All reading and writing is done over HTTPS on port 443, except likes, which are sent
@@ -362,21 +371,30 @@ footer {
 
     <section>
       <h3>Registering</h3>
+      <p class="in">There are no passwords. You make a key pair. The private key stays on your computer and
+        signs every request. The server stores only your public key and checks each signature with it.
+        If you lose the private key, the handle is gone.</p>
+      <div class="term">
+        <span class="c">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>
+      </div>
       <p class="in">Registration is gated by one simple networking question, so every account belongs to someone
         who has looked at least one thing up. The answer is in this manual or one command away. A search
-        engine is allowed. This is a lesson, not an exam.</p>
+        engine is allowed. This is a lesson, not an exam. Ask for the question. The reply also prints the
+        exact commands to answer it.</p>
       <div class="term">
         <span class="c">curl https://packet.social/register</span>
         <span class="o">question: which port does HTTPS use?</span>
-        <span class="o">answer with: answer=...</span>
         <span class="gap"></span>
-        <span class="c">curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=443' https://packet.social/register</span>
-        <span class="o">201 Created</span>
+        <span class="m"># HTTPS uses 443, so A=443. Change H= to your handle.</span>
+        <span class="c">H=ada; A=443; T=$(date +%s)</span>
+        <span class="c">S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
+        <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>
+        <span class="o">201 Created, then a welcome message</span>
       </div>
-      <p class="in">Handles are lowercase letters, digits and underscore, up to 20 bytes. Passwords are 8 to 128 bytes
-        and are sent with HTTP basic auth, over TLS. Use one you use nowhere else. A question is good for
-        10 to 20 minutes and is tied to your address. In the example above the question was about HTTPS, so the
-        answer was 443. Your question may differ: read it, then answer it.</p>
+      <p class="in">Handles are lowercase letters, digits and underscore, up to 20 bytes. Answers are not case
+        sensitive. A question is good for 10 to 20 minutes and is tied to your address. Your question may
+        differ from the example: read it, then answer it. A signed request is valid for 5 minutes, so your
+        clock must be right.</p>
       <div class="term">
         <span class="m"># tools for finding answers</span>
         <span class="c">ping localhost</span>
@@ -387,10 +405,13 @@ footer {
     <section>
       <h3>Posting</h3>
       <div class="term">
-        <span class="c">curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'your words' https://packet.social/post</span>
-        <span class="o">201 Created  location: /post/42</span>
+        <span class="c">H=ada; B='your words'; T=$(date +%s)</span>
+        <span class="c">S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
+        <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>
+        <span class="o">201 Created</span>
       </div>
-      <p class="in">A post may be up to 280 bytes. The body must be sent exactly as written, so use
+      <p class="in">A post may be up to 280 bytes. The signature covers your handle, the time and your exact words,
+        and each signed request works once. Use
         <span class="tx">--data-binary</span> and not <span class="tx">-d</span>, which strips newlines.
         Check a length yourself with <span class="tx">printf '%s' 'text' | wc -c</span>.
         Control characters are refused, so a post cannot rewrite your terminal.</p>
@@ -435,7 +456,7 @@ footer {
         <span class="o">200 OK                    request worked</span>
         <span class="o">201 Created               your post or account exists</span>
         <span class="o">400 Bad Request           you sent something malformed</span>
-        <span class="o">401 Unauthorized          missing or wrong credentials</span>
+        <span class="o">401 Unauthorized          missing or bad signature</span>
         <span class="o">403 Forbidden             wrong registration answer</span>
         <span class="o">404 Not Found             no such post or profile</span>
         <span class="o">405 Method Not Allowed    DELETE and PUT do not exist</span>
