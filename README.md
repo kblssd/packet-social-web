@@ -74,7 +74,9 @@ $u.Send($b, $b.Length, 'packet.social', 6969) | Out-Null
 
 ## 2. Quick start in five commands
 
-Replace `you` and `password` with your own. Commands that start with `curl -u` need your account.
+**Each command is one line. Copy all of it, including the web address at the end.**
+Replace the words in CAPITALS with your own: `YOURHANDLE`, `YOURPASSWORD` and `YOUR_ANSWER`.
+Keep the single quotes around them.
 
 ```
 # 1. is the server alive?
@@ -82,17 +84,35 @@ curl https://packet.social/status
 
 # 2. ask for the registration question, then answer it and register
 curl https://packet.social/register
-curl -u 'you:password' -d 'answer=...' https://packet.social/register
+curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=YOUR_ANSWER' https://packet.social/register
 
 # 3. read the feed
 curl https://packet.social/feed
 
 # 4. post
-curl -u 'you:password' --data-binary 'hello from the wire' https://packet.social/post
+curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'hello from the wire' https://packet.social/post
 
 # 5. like post number 3 (a UDP packet, no reply will ever come)
 echo -n 'LIKE:3' | nc -u -w1 packet.social 6969
 ```
+
+**A worked example of step 2.** Say the server asks this:
+
+```
+curl https://packet.social/register
+question: which port does HTTPS use?
+answer with: answer=...
+```
+
+The answer is `443`. Say you want the handle `ada` and the password `correct-horse-9`. You type this,
+all on one line:
+
+```
+curl -u 'ada:correct-horse-9' -d 'answer=443' https://packet.social/register
+```
+
+and the server replies `201 Created`. Your question will probably be a different one, so read it
+first and use your own answer.
 
 The rest of this page explains each one slowly.
 
@@ -141,8 +161,10 @@ digits and underscore, up to 20 characters) and a **password** (8 to 128 charact
 password you use nowhere else.
 
 ```
-curl -u 'you:password' -d 'answer=443' https://packet.social/register
+curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=443' https://packet.social/register
 ```
+
+(Use your own handle, password and answer. Copy the whole line, ending with the web address.)
 
 On success the server replies `201 Created`. Your account exists.
 
@@ -164,7 +186,7 @@ internet address. If the question changes before you answer, just ask again and 
 
 > **Keep your password out of your history.** Typing it in a command saves it in your terminal
 > history. If you leave off the password, curl asks for it and does not save it:
-> `curl -u 'you' --data-binary 'hi' https://packet.social/post`
+> `curl -u 'YOURHANDLE' --data-binary 'hi' https://packet.social/post`
 >
 > **There is no password reset.** If you forget it, that account is gone. Register a new handle.
 
@@ -204,13 +226,13 @@ curl https://packet.social/profile/halfopen
 ### Step 4. Post
 
 ```
-curl -u 'you:password' --data-binary 'hello from the wire' https://packet.social/post
+curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'hello from the wire' https://packet.social/post
 ```
 
 You get `201 Created`. To see which id your post got, add `-i` to show the headers:
 
 ```
-curl -i -u 'you:password' --data-binary 'my second post' https://packet.social/post
+curl -i -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'my second post' https://packet.social/post
 ```
 
 Look for the line `Location: /post/42`.
@@ -223,7 +245,7 @@ Things to know about posting:
 - Use `--data-binary`, not `-d`. The `-d` option removes newlines, so your post would be mangled.
 - To post several lines, pipe them in:
   ```
-  printf 'line one\nline two' | curl -u 'you:password' --data-binary @- https://packet.social/post
+  printf 'line one\nline two' | curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary @- https://packet.social/post
   ```
 - Posts must be plain text. Control characters (the invisible ones terminals obey) are refused, so
   nobody can write a post that rewrites your screen.
@@ -267,12 +289,12 @@ You cannot post, like or delete from the website. It is a window, not a door.
 ```
 curl https://packet.social/status                          # is it alive, how many users and posts
 curl https://packet.social/register                        # get a registration question
-curl -u 'me:pw' -d 'answer=..' https://packet.social/register   # register
+curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=YOUR_ANSWER' https://packet.social/register   # register
 curl https://packet.social/feed                            # newest 50 posts
 curl https://packet.social/feed.json                       # the same, as JSON
 curl https://packet.social/post/7                          # one post
 curl https://packet.social/profile/me                      # one person
-curl -u 'me:pw' --data-binary 'text' https://packet.social/post  # post
+curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'text' https://packet.social/post  # post
 echo -n 'LIKE:7' | nc -u -w1 packet.social 6969            # like post 7
 ```
 
@@ -322,8 +344,12 @@ Every HTTP answer starts with a three digit code. The first digit tells you the 
 
 ## 7. When something goes wrong
 
-**`zsh: command not found: 10.1.2.3`** (or any answer you typed). You typed the answer as its
-own command. The answer goes inside the register command, in `-d 'answer=...'`.
+**`zsh: command not found: 443`** (or any answer you typed on its own). The answer is not a
+command. It goes inside the register command, in `-d 'answer=YOUR_ANSWER'`.
+
+**`curl: (2) no URL specified`** (or `curl: try 'curl --help'`). You left off the web address at
+the end of the command. Every curl command ends with an address such as
+`https://packet.social/register`. Copy the whole line.
 
 **`401 Unauthorized`.** The handle or password is wrong, or you forgot `-u`. Handles are all
 lowercase. Wrap the credentials in single quotes so symbols like `!` and `$` are not
