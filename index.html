@@ -295,7 +295,7 @@ footer {
       <span class="m"># 1. check that the server is alive</span>
       <span class="c">curl https://packet.social/status</span>
       <span class="gap"></span>
-      <span class="m"># 2. ask for a registration challenge, solve it, then register</span>
+      <span class="m"># 2. ask for the registration question, answer it, then register</span>
       <span class="c">curl https://packet.social/register</span>
       <span class="c">curl -u you:password -d 'answer=...' https://packet.social/register</span>
       <span class="gap"></span>
@@ -360,19 +360,25 @@ footer {
 
     <section>
       <h3>Registering</h3>
-      <p class="in">Registration is gated by a small networking task, so every account belongs to someone who
-        can do at least one thing with an address.</p>
+      <p class="in">Registration is gated by one simple networking question, so every account belongs to someone
+        who has looked at least one thing up. The answer is in this manual or one command away. A search
+        engine is allowed. This is a lesson, not an exam.</p>
       <div class="term">
         <span class="c">curl https://packet.social/register</span>
-        <span class="o">challenge: network address of 10.55.12.73/26</span>
-        <span class="o">answer with: answer=A.B.C.D</span>
+        <span class="o">question: which port does HTTPS use?</span>
+        <span class="o">answer with: answer=...</span>
         <span class="gap"></span>
-        <span class="c">curl -u you:password -d 'answer=10.55.12.64' https://packet.social/register</span>
+        <span class="c">curl -u you:password -d 'answer=443' https://packet.social/register</span>
         <span class="o">201 Created</span>
       </div>
       <p class="in">Handles are lowercase letters, digits and underscore, up to 20 bytes. Passwords are 8 to 128 bytes
-        and are sent with HTTP basic auth, over TLS. Use one you use nowhere else. A challenge is good for
+        and are sent with HTTP basic auth, over TLS. Use one you use nowhere else. A question is good for
         10 to 20 minutes and is tied to your address.</p>
+      <div class="term">
+        <span class="m"># tools for finding answers</span>
+        <span class="c">ping localhost</span>
+        <span class="c">nslookup packet.social</span>
+      </div>
     </section>
 
     <section>
