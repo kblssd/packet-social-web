@@ -11,10 +11,12 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
-from base64 import b64decode
+from base64 import b64decode, b64encode
 from collections import defaultdict, deque
 from urllib.parse import parse_qs
 
@@ -32,6 +34,8 @@ REGISTER_PER_HOUR = 5     # registration attempts per hour per address
 POSTS_PER_10MIN = 20      # posts per 10 minutes per handle
 HANDLE_RE = re.compile(r"[a-z0-9_]{1,20}")
 LIKE_RE = re.compile(rb"LIKE:([0-9]{1,12})\n?")
+CLOCK_SKEW = 300          # seconds a signed request stays valid
+NAMESPACE = "packet.social"
 
 STATUS = {
     200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
@@ -56,6 +60,9 @@ CREATE TABLE IF NOT EXISTS likes (post_id INTEGER NOT NULL, who TEXT NOT NULL,
                                   t INTEGER NOT NULL, PRIMARY KEY (post_id, who));
 """)
 
+if "pubkey" not in [c[1] for c in db.execute("PRAGMA table_info(users)")]:
+    db.execute("ALTER TABLE users ADD COLUMN pubkey TEXT")  # accounts before keys have none
+
 row = db.execute("SELECT v FROM meta WHERE k='secret'").fetchone()
 if row is None:
     db.execute("INSERT INTO meta (k, v) VALUES ('secret', ?)", (os.urandom(32),))
@@ -70,6 +77,7 @@ def log(msg):
 # ---------------------------------------------------------------- limits
 
 _hits = defaultdict(deque)
+_seen = {}  # signature hash -> expiry, so a captured request cannot be replayed
 
 
 def allow(key, limit, window):
@@ -90,6 +98,9 @@ async def janitor():
         now = time.monotonic()
         for k in [k for k, q in _hits.items() if not q or now - q[-1] > 3700]:
             _hits.pop(k, None)
+        wall = time.time()
+        for k in [k for k, exp in _seen.items() if exp < wall]:
+            _seen.pop(k, None)
 
 
 # ---------------------------------------------------------------- helpers
@@ -99,8 +110,71 @@ def anon(ip):
     return hmac.new(SECRET, ip.encode(), "sha256").hexdigest()[:20]
 
 
-def hash_pw(password, salt):
-    return hashlib.scrypt(password, salt=salt, n=2 ** 14, r=8, p=1, maxmem=64 * 1024 * 1024)
+def parse_pubkey(line):
+    """Return (b64, None) for a valid ssh-ed25519 public key, else (None, reason)."""
+    parts = line.split()
+    if len(parts) < 2 or parts[0] != "ssh-ed25519":
+        return None, "pubkey: must be an ssh-ed25519 public key (ssh-keygen -t ed25519)"
+    try:
+        blob = b64decode(parts[1], validate=True)
+    except Exception:
+        return None, "pubkey: not valid base64"
+    # wire format: string "ssh-ed25519" then string of 32 key bytes
+    if blob != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + blob[-32:] or len(blob) != 51:
+        return None, "pubkey: not a valid ed25519 key"
+    return parts[1], None
+
+
+def verify_sig(handle, pubkey_b64, message, sig_b64):
+    """Check an ssh-keygen -Y sign signature with ssh-keygen -Y verify."""
+    try:
+        sig = b64decode(sig_b64, validate=True)
+    except Exception:
+        return False
+    if len(sig) > 1000 or not sig.startswith(b"-----BEGIN SSH SIGNATURE-----"):
+        return False
+    with tempfile.TemporaryDirectory() as d:
+        allowed, sigfile = os.path.join(d, "allowed"), os.path.join(d, "sig")
+        with open(allowed, "w") as f:
+            f.write('%s namespaces="%s" ssh-ed25519 %s\n' % (handle, NAMESPACE, pubkey_b64))
+        with open(sigfile, "wb") as f:
+            f.write(sig)
+        try:
+            r = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", allowed, "-I", handle,
+                                "-n", NAMESPACE, "-s", sigfile],
+                               input=message, capture_output=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return r.returncode == 0
+
+
+def check_signed(headers, message_for, pubkey_b64=None):
+    """Verify the Handle, Time and Signature headers. Returns the handle, or raises Reply."""
+    handle = headers.get("handle", "")
+    ts_raw = headers.get("time", "")
+    sig = headers.get("signature", "")
+    if not (handle and ts_raw and sig):
+        unauthorized()
+    if not HANDLE_RE.fullmatch(handle) or not ts_raw.isdigit() or len(ts_raw) > 12:
+        unauthorized()
+    ts = int(ts_raw)
+    skew = int(time.time()) - ts
+    if abs(skew) > CLOCK_SKEW:
+        text(401, "401 Unauthorized\nyour clock is %d seconds off. Time must be within %d seconds. "
+                  "Check your computer's date and time.\n" % (skew, CLOCK_SKEW))
+    if pubkey_b64 is None:
+        row = db.execute("SELECT pubkey FROM users WHERE handle=?", (handle,)).fetchone()
+        if row is None or not row[0]:
+            unauthorized()
+        pubkey_b64 = row[0].split()[1]
+    key = hashlib.sha256(sig.encode()).hexdigest()
+    if key in _seen:
+        text(401, "401 Unauthorized\nthis exact request was already used. "
+                  "Run the commands again to make a fresh one.\n")
+    if not verify_sig(handle, pubkey_b64, message_for(handle, ts_raw), sig):
+        unauthorized()
+    _seen[key] = time.time() + 2 * CLOCK_SKEW
+    return handle
 
 
 # Registration questions. Every answer is in the manual, or one command away.
@@ -141,37 +215,6 @@ def clean_text(body):
         if unicodedata.category(ch) == "Cc" and ch not in "\n\t":
             return None  # no escape sequences, no NUL, no C1 controls
     return text
-
-
-def parse_basic(headers):
-    raw = headers.get("authorization", "")
-    if not raw.lower().startswith("basic "):
-        return None
-    try:
-        decoded = b64decode(raw[6:].strip(), validate=True)
-    except Exception:
-        return None
-    handle, sep, password = decoded.partition(b":")
-    if not sep:
-        return None
-    try:
-        return handle.decode("ascii"), password
-    except UnicodeDecodeError:
-        return None
-
-
-def check_login(headers):
-    cred = parse_basic(headers)
-    if cred is None:
-        return None
-    handle, password = cred
-    row = db.execute("SELECT salt, hash FROM users WHERE handle=?", (handle,)).fetchone()
-    if row is None:
-        hash_pw(password, b"\0" * 16)  # keep timing similar for unknown handles
-        return None
-    if hmac.compare_digest(hash_pw(password, bytes(row[0])), bytes(row[1])):
-        return handle
-    return None
 
 
 def fmt_post(pid, who, t, body, likes):
@@ -244,7 +287,7 @@ def route(method, path, headers, body, ip):
     if path == "/register":
         if not is_post:
             question, _ = challenge_for(ip, current_bucket())
-            text(200, "question: %s\nanswer with: answer=...\n" % question)
+            text(200, REGISTER_HELP % question)
         return register(headers, body, ip)
 
     if path == "/post":
@@ -255,57 +298,104 @@ def route(method, path, headers, body, ip):
     text(404, "404 Not Found\n")
 
 
+REGISTER_HELP = """question: %s
+
+HOW TO ANSWER
+Type your answer in the A= part of the first line. It is not case sensitive,
+so UDP and udp both work. Change H= to the handle you want (lowercase letters,
+digits and underscore, up to 20).
+
+Do this once, to make your key pair (a private key and a public key).
+Press Enter at the passphrase prompt for none, or choose one:
+  ssh-keygen -t ed25519 -f ~/.ssh/packet_social
+
+Then copy these three lines. Change only H= and A= on the first line:
+  H=yourhandle; A=YOUR_ANSWER; T=$(date +%%s)
+  S=$(printf '%%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\\n')
+  curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register
+
+Your private key never leaves your computer. No password is ever sent.
+The question changes every 10 to 20 minutes. If you get 403, ask again.
+"""
+
+WELCOME = """201 Created
+
+==================================================
+  welcome to packet.social, @%(h)s
+==================================================
+
+Your account exists. You proved you own your key, so no password is needed,
+ever. Keep ~/.ssh/packet_social safe. If you lose it, this handle is gone.
+
+POST something (change only the B= text, then copy all three lines):
+  H=%(h)s; B='hello from the wire'; T=$(date +%%s)
+  S=$(printf '%%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\\n')
+  curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post
+
+READ the feed (no key needed):
+  curl https://packet.social/feed
+
+LIKE post 3 (a UDP packet, nothing prints back):
+  echo -n 'LIKE:3' | nc -u -w1 packet.social 6969
+
+Posts are 280 bytes at most, and can never be edited or deleted.
+Every signed request is only valid for 5 minutes.
+Stuck? Read the manual: https://packet.social/#manual
+"""
+
+
 def unauthorized():
-    text(401, "401 Unauthorized\n", {"WWW-Authenticate": 'Basic realm="packet.social"'})
+    text(401, "401 Unauthorized\nmissing or bad signature. Check the Handle, Time and Signature "
+              "headers, and that you used the same key you registered with.\n")
 
 
 def register(headers, body, ip):
     if not allow("reg:" + ip, REGISTER_PER_HOUR, 3600):
         text(429, "429 Too Many Requests\n", {"Retry-After": "3600"})
-    cred = parse_basic(headers)
-    if cred is None:
-        unauthorized()
-    handle, password = cred
+    handle = headers.get("handle", "")
     if not HANDLE_RE.fullmatch(handle):
         text(400, "400 Bad Request\nhandle: lowercase letters, digits, underscore, 1 to 20 bytes\n")
-    if not 8 <= len(password) <= 128:
-        text(400, "400 Bad Request\npassword: 8 to 128 bytes\n")
     try:
-        answer = parse_qs(body.decode("ascii")).get("answer", [""])[0].strip()
+        form = parse_qs(body.decode("utf-8"))
     except UnicodeDecodeError:
-        answer = ""
+        form = {}
+    answer = form.get("answer", [""])[0].strip()
     ok = False
     for bucket in (current_bucket(), current_bucket() - 1):
         if hmac.compare_digest(answer.lower(), challenge_for(ip, bucket)[1].lower()):
             ok = True
     if not ok:
         text(403, "403 Forbidden\nwrong answer, or the question changed. GET /register for the current one\n")
-    salt = os.urandom(16)
+    pubkey = form.get("pubkey", [""])[0].strip()
+    b64, why = parse_pubkey(pubkey)
+    if b64 is None:
+        text(400, "400 Bad Request\n%s\n" % why)
+    check_signed(headers, lambda h, t: ("register %s %s" % (h, t)).encode(), pubkey_b64=b64)
     try:
-        db.execute("INSERT INTO users (handle, salt, hash, created) VALUES (?,?,?,?)",
-                   (handle, salt, hash_pw(password, salt), int(time.time())))
+        db.execute("INSERT INTO users (handle, salt, hash, created, pubkey) VALUES (?,?,?,?,?)",
+                   (handle, b"", b"", int(time.time()), "ssh-ed25519 " + b64))
     except sqlite3.IntegrityError:
         text(409, "409 Conflict\nhandle is taken\n")
     log("register %s" % handle)
-    text(201, "201 Created\n")
+    text(201, WELCOME % {"h": handle})
 
 
 def create_post(headers, body):
-    handle = check_login(headers)
-    if handle is None:
-        unauthorized()
-    if not allow("post:" + handle, POSTS_PER_10MIN, 600):
+    handle = headers.get("handle", "")
+    if HANDLE_RE.fullmatch(handle) and not allow("post:" + handle, POSTS_PER_10MIN, 600):
         text(429, "429 Too Many Requests\n", {"Retry-After": "60"})
     if not body:
         text(400, "400 Bad Request\nempty body\n")
     msg = clean_text(body)
     if msg is None:
         text(400, "400 Bad Request\nbody must be UTF-8 text without control characters\n")
+    handle = check_signed(headers, lambda h, t: ("%s %s " % (h, t)).encode() + body)
     cur = db.execute("INSERT INTO posts (handle, t, body) VALUES (?,?,?)",
                      (handle, int(time.time()), body))
     pid = cur.lastrowid
     log("post %d by %s" % (pid, handle))
-    text(201, "201 Created\n", {"Location": "/post/%d" % pid})
+    text(201, "201 Created\nlike it: echo -n 'LIKE:%d' | nc -u -w1 packet.social 6969\n" % pid,
+         {"Location": "/post/%d" % pid})
 
 
 # ---------------------------------------------------------------- http

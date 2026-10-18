@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+command -v ssh-keygen >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq openssh-client; }
 id packet >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin packet
 install -d -o packet -g packet -m 750 /var/lib/packet
 install -d -m 755 /var/www/packet
