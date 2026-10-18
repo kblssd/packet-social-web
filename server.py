@@ -7,7 +7,6 @@ UDP datagrams on port 6969 are likes. Nothing is ever sent back over UDP.
 import asyncio
 import hashlib
 import hmac
-import ipaddress
 import json
 import os
 import re
@@ -24,6 +23,7 @@ HTTP_HOST = os.environ.get("PACKET_HTTP_HOST", "127.0.0.1")
 HTTP_PORT = int(os.environ.get("PACKET_HTTP_PORT", "8080"))
 UDP_HOST = os.environ.get("PACKET_UDP_HOST", "0.0.0.0")
 UDP_PORT = int(os.environ.get("PACKET_UDP_PORT", "6969"))
+PUBLIC_IP = os.environ.get("PACKET_IP", "46.101.187.251")
 
 MAX_POST = 280            # bytes
 MAX_FEED = 50             # posts returned by /feed
@@ -103,12 +103,26 @@ def hash_pw(password, salt):
     return hashlib.scrypt(password, salt=salt, n=2 ** 14, r=8, p=1, maxmem=64 * 1024 * 1024)
 
 
+# Registration questions. Every answer is in the manual, or one command away.
+QUESTIONS = [
+    ("what is the IPv4 loopback address?", "127.0.0.1"),
+    ("which port does HTTPS use?", "443"),
+    ("which port does plain HTTP use?", "80"),
+    ("which port does SSH use?", "22"),
+    ("what status code means Not Found?", "404"),
+    ("what status code means Unauthorized?", "401"),
+    ("what status code means Created?", "201"),
+    ("do likes travel over tcp or udp?", "udp"),
+    ("which port do likes use?", "6969"),
+    ("what is the maximum size of a post, in bytes?", "280"),
+    ("how many bits are in an IPv4 address?", "32"),
+    ("what is the IP address of packet.social?", PUBLIC_IP),
+]
+
+
 def challenge_for(ip, bucket):
     d = hmac.new(SECRET, ("%s|%d" % (ip, bucket)).encode(), "sha256").digest()
-    prefix = 24 + d[0] % 6
-    addr = (10 << 24) | int.from_bytes(d[1:4], "big")
-    iface = ipaddress.ip_interface("%s/%d" % (ipaddress.IPv4Address(addr), prefix))
-    return str(iface), str(iface.network.network_address)
+    return QUESTIONS[d[0] % len(QUESTIONS)]
 
 
 def current_bucket():
@@ -229,8 +243,8 @@ def route(method, path, headers, body, ip):
 
     if path == "/register":
         if not is_post:
-            iface, _ = challenge_for(ip, current_bucket())
-            text(200, "challenge: network address of %s\nanswer with: answer=A.B.C.D\n" % iface)
+            question, _ = challenge_for(ip, current_bucket())
+            text(200, "question: %s\nanswer with: answer=...\n" % question)
         return register(headers, body, ip)
 
     if path == "/post":
@@ -262,10 +276,10 @@ def register(headers, body, ip):
         answer = ""
     ok = False
     for bucket in (current_bucket(), current_bucket() - 1):
-        if hmac.compare_digest(answer, challenge_for(ip, bucket)[1]):
+        if hmac.compare_digest(answer.lower(), challenge_for(ip, bucket)[1].lower()):
             ok = True
     if not ok:
-        text(403, "403 Forbidden\nwrong answer, or the challenge expired. GET /register for a new one\n")
+        text(403, "403 Forbidden\nwrong answer, or the question changed. GET /register for the current one\n")
     salt = os.urandom(16)
     try:
         db.execute("INSERT INTO users (handle, salt, hash, created) VALUES (?,?,?,?)",

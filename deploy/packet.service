@@ -9,6 +9,7 @@ ExecStart=/usr/bin/python3 /opt/packet-social-web/server.py
 Restart=always
 RestartSec=2
 Environment=PYTHONUNBUFFERED=1
+Environment=PACKET_IP=46.101.187.251
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
