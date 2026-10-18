@@ -1,0 +1,13 @@
+[Unit]
+Description=packet.social nightly database backup
+
+[Service]
+Type=oneshot
+User=packet
+Group=packet
+ExecStart=/usr/bin/python3 /opt/packet-social-web/backup.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/packet

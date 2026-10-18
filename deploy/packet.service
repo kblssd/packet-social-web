@@ -1,0 +1,19 @@
+[Unit]
+Description=packet.social server
+After=network.target
+
+[Service]
+User=packet
+Group=packet
+ExecStart=/usr/bin/python3 /opt/packet-social-web/server.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/packet
+
+[Install]
+WantedBy=multi-user.target

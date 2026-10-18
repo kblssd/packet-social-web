@@ -1,0 +1,13 @@
+packet.social, www.packet.social {
+	encode gzip
+
+	@api path /status /status.json /register /feed /feed.json /post /post/* /profile/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		root * /var/www/packet
+		file_server
+	}
+}
