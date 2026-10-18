@@ -4,7 +4,7 @@ A social network you have to learn networking to use.
 
 There is no app, no login button and no feed to scroll. You read and write to
 [packet.social](https://packet.social) from a terminal, one request at a time, with tools
-that are already on your computer: `curl` for posts and `nc` for likes. If you do not yet
+that are already on your computer: `curl` and `ssh-keygen` for posts, `nc` for likes. If you do not yet
 know what a port, a header or a status code is, you will by the time you make your first post.
 
 The website is only a front door. It has three pages: **home** (how to connect), **man**
@@ -19,7 +19,7 @@ Everything else happens in your terminal.
 ## Contents
 
 1. [What you need](#1-what-you-need)
-2. [Quick start in five commands](#2-quick-start-in-five-commands)
+2. [Quick start](#2-quick-start)
 3. [Step by step for a first timer](#3-step-by-step-for-a-first-timer)
 4. [Cheat sheet](#4-cheat-sheet)
 5. [Rules and limits](#5-rules-and-limits)
@@ -42,79 +42,72 @@ Everything else happens in your terminal.
 | Windows | Open the Start menu, type `PowerShell` or `Windows Terminal`, press Enter. WSL (Ubuntu inside Windows) is the smoothest option and the commands below work unchanged. |
 | Linux   | Press Ctrl + Alt + T, or search for Terminal. |
 
-**Two tools:**
+**Three tools:**
 
-- `curl` sends requests to websites. It is built in on macOS and Linux, and on Windows 10 and 11
-  as `curl.exe`.
+- `curl` sends requests to websites. It is built in on macOS and Linux.
+- `ssh-keygen` makes your key pair and signs your requests. It is built in on macOS and Linux
+  (OpenSSH 8.0 or newer, which every current system has).
 - `nc` (netcat) sends raw network packets. It is built in on macOS. On Debian or Ubuntu install it
-  with `sudo apt install netcat-openbsd`. Windows has no `nc`, see the Windows notes below.
+  with `sudo apt install netcat-openbsd`.
 
 Check that they exist:
 
 ```
 curl --version
+ssh-keygen -?
 nc -h
 ```
 
-(`nc -h` printing a help screen or an error about options is fine. "command not found" is not.)
+(A help screen or an error about options is fine. "command not found" is not.)
 
 **Quotes matter.** Always wrap text in plain single quotes: `'like this'`. Do not use curly
 "smart" quotes. If you paste commands from a chat app or a document and get odd errors, retype the quotes.
 
-**Windows notes (PowerShell).** In PowerShell, `curl` is an alias for something else. Type
-`curl.exe` instead of `curl`. To send a like without `nc`, use this instead:
-
-```
-$u = New-Object Net.Sockets.UdpClient
-$b = [Text.Encoding]::ASCII.GetBytes('LIKE:1')
-$u.Send($b, $b.Length, 'packet.social', 6969) | Out-Null
-```
+**Windows.** The commands are written for a bash shell. Use WSL (Ubuntu inside Windows), which
+works unchanged. Git Bash also works for everything except likes, because it has no `nc`.
 
 ---
 
-## 2. Quick start in five commands
+## 2. Quick start
 
-**Each command is one line. Copy all of it, including the web address at the end.**
-Replace the words in CAPITALS with your own: `YOURHANDLE`, `YOURPASSWORD` and `YOUR_ANSWER`.
-Keep the single quotes around them.
+There are no passwords. You make a **key pair**: a private key that stays on your computer, and a
+public key you give to the server. Every request you send is **signed** with the private key, and
+the server checks the signature with your public key.
+
+**Each curl command is one line. Copy all of it, including the web address at the end.**
+Change only the words in CAPITALS or the part the text tells you to change.
 
 ```
 # 1. is the server alive?
 curl https://packet.social/status
 
-# 2. ask for the registration question, then answer it and register
-curl https://packet.social/register
-curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=YOUR_ANSWER' https://packet.social/register
+# 2. make your key pair, once (press Enter twice for no passphrase, or choose one)
+ssh-keygen -t ed25519 -f ~/.ssh/packet_social
 
-# 3. read the feed
+# 3. get the registration question. It also prints the exact commands for step 4.
+curl https://packet.social/register
+
+# 4. register: change H= (your handle) and A= (your answer), then copy all three lines
+H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)
+S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')
+curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register
+
+# 5. read the feed
 curl https://packet.social/feed
 
-# 4. post
-curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'hello from the wire' https://packet.social/post
+# 6. post: change H= and B=, then copy all three lines
+H=yourhandle; B='hello from the wire'; T=$(date +%s)
+S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')
+curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post
 
-# 5. like post number 3 (a UDP packet, no reply will ever come)
+# 7. like post number 3 (a UDP packet, no reply will ever come)
 echo -n 'LIKE:3' | nc -u -w1 packet.social 6969
 ```
 
-**A worked example of step 2.** Say the server asks this:
+When you register, the server replies `201 Created` and a welcome message that repeats the posting
+commands with your handle already filled in, so you can start without coming back here.
 
-```
-curl https://packet.social/register
-question: which port does HTTPS use?
-answer with: answer=...
-```
-
-The answer is `443`. Say you want the handle `ada` and the password `correct-horse-9`. You type this,
-all on one line:
-
-```
-curl -u 'ada:correct-horse-9' -d 'answer=443' https://packet.social/register
-```
-
-and the server replies `201 Created`. Your question will probably be a different one, so read it
-first and use your own answer.
-
-The rest of this page explains each one slowly.
+The rest of this page explains each part slowly.
 
 ---
 
@@ -139,34 +132,60 @@ your first HTTPS request. The `https` part means the conversation was encrypted.
 
 ### Step 2. Register
 
-You will be asked one simple networking question. Every answer is in the
-[manual](https://packet.social/#manual), on this page, or one command away. A search engine
-is allowed. This is a lesson, not an exam.
+**2a. Make your key pair (once).**
 
-Ask for your question:
+```
+ssh-keygen -t ed25519 -f ~/.ssh/packet_social
+```
+
+It asks for a passphrase. Press Enter twice for none, or type one (you will be asked for it every
+time you sign). Two files appear in the hidden folder `~/.ssh`:
+
+- `packet_social` is the **private key**. Never share it. Back it up. If you lose it, nobody,
+  including me, can get your handle back.
+- `packet_social.pub` is the **public key**. It is safe to share. This is what the server stores.
+
+**2b. Ask for your question.**
 
 ```
 curl https://packet.social/register
 ```
 
-You get something like:
+You get the question and the exact commands to answer it:
 
 ```
 question: which port does HTTPS use?
-answer with: answer=...
+
+HOW TO ANSWER
+Type your answer in the A= part of the first line. It is not case sensitive,
+so UDP and udp both work. Change H= to the handle you want ...
 ```
 
-Work out the answer (here it is `443`), then register. Pick a **handle** (lowercase letters,
-digits and underscore, up to 20 characters) and a **password** (8 to 128 characters). Use a
-password you use nowhere else.
+You will be asked one simple networking question. Every answer is in the
+[manual](https://packet.social/#manual), on this page, or one command away. A search engine
+is allowed. This is a lesson, not an exam.
+
+**2c. Register.** Pick a **handle** (lowercase letters, digits and underscore, up to 20
+characters). Here the question was about HTTPS, so the answer is `443`. Say your handle is `ada`.
+Change only the first line, then copy all three lines:
 
 ```
-curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=443' https://packet.social/register
+H=ada; A=443; T=$(date +%s)
+S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')
+curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register
 ```
 
-(Use your own handle, password and answer. Copy the whole line, ending with the web address.)
+What those three lines do:
 
-On success the server replies `201 Created`. Your account exists.
+1. `H=ada; A=443; T=$(date +%s)` stores three values in variables: your handle, your answer, and
+   the current time in seconds (`date +%s`).
+2. The second line signs the text `register ada 1785961012` with your private key
+   (`ssh-keygen -Y sign`) and turns the result into one line (`base64 | tr -d '\n'`).
+3. The curl line sends the handle, time and signature as headers (`-H`), the answer as form data
+   (`-d`) and your public key (`--data-urlencode`). The server checks the signature against the
+   public key you sent. A valid signature proves you own the private key.
+
+On success the server replies `201 Created` with a welcome message. Your account exists.
 
 The question you are asked can be any one of these, so here is where to find each answer:
 
@@ -184,11 +203,8 @@ The question you are asked can be any one of these, so here is where to find eac
 Answers are not case sensitive. A question stays valid for 10 to 20 minutes and is tied to your
 internet address. If the question changes before you answer, just ask again and answer the new one.
 
-> **Keep your password out of your history.** Typing it in a command saves it in your terminal
-> history. If you leave off the password, curl asks for it and does not save it:
-> `curl -u 'YOURHANDLE' --data-binary 'hi' https://packet.social/post`
->
-> **There is no password reset.** If you forget it, that account is gone. Register a new handle.
+> **There is no password and no reset.** Your private key is your account. Keep
+> `~/.ssh/packet_social` safe and backed up. If you lose it, that handle is gone for good.
 
 ### Step 3. Read the feed
 
@@ -225,28 +241,27 @@ curl https://packet.social/profile/halfopen
 
 ### Step 4. Post
 
-```
-curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'hello from the wire' https://packet.social/post
-```
-
-You get `201 Created`. To see which id your post got, add `-i` to show the headers:
+Change `H=` to your handle and `B=` to your words, then copy all three lines:
 
 ```
-curl -i -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'my second post' https://packet.social/post
+H=ada; B='hello from the wire'; T=$(date +%s)
+S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')
+curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post
 ```
 
-Look for the line `Location: /post/42`.
+You get `201 Created`. To see which id your post got, add `-i` to the curl line to show the
+headers, and look for `Location: /post/42`.
 
 Things to know about posting:
 
+- The signature covers your handle, the time and your exact words, so nobody can change a post in
+  flight or reuse a captured request. A signed request is valid for 5 minutes, so your computer's
+  clock must be right.
 - A post is at most **280 bytes**. Bytes, not characters: a plain letter is 1 byte, an accented
   letter is 2, an emoji is usually 4. Check a length with
   `printf '%s' 'your text' | wc -c`.
 - Use `--data-binary`, not `-d`. The `-d` option removes newlines, so your post would be mangled.
-- To post several lines, pipe them in:
-  ```
-  printf 'line one\nline two' | curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary @- https://packet.social/post
-  ```
+- Several lines work too: put a real line break inside the quotes of `B='...'`.
 - Posts must be plain text. Control characters (the invisible ones terminals obey) are refused, so
   nobody can write a post that rewrites your screen.
 - Posts cannot be edited or deleted. `DELETE` returns `405` and always will.
@@ -288,14 +303,21 @@ You cannot post, like or delete from the website. It is a window, not a door.
 
 ```
 curl https://packet.social/status                          # is it alive, how many users and posts
-curl https://packet.social/register                        # get a registration question
-curl -u 'YOURHANDLE:YOURPASSWORD' -d 'answer=YOUR_ANSWER' https://packet.social/register   # register
+ssh-keygen -t ed25519 -f ~/.ssh/packet_social              # make your key pair, once
+curl https://packet.social/register                        # get a question and the register commands
 curl https://packet.social/feed                            # newest 50 posts
 curl https://packet.social/feed.json                       # the same, as JSON
 curl https://packet.social/post/7                          # one post
-curl https://packet.social/profile/me                      # one person
-curl -u 'YOURHANDLE:YOURPASSWORD' --data-binary 'text' https://packet.social/post  # post
+curl https://packet.social/profile/ada                     # one person
 echo -n 'LIKE:7' | nc -u -w1 packet.social 6969            # like post 7
+```
+
+Signing (register and post) always has the same three lines. For a post:
+
+```
+H=ada; B='your words'; T=$(date +%s)
+S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')
+curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post
 ```
 
 Handy curl flags: `-i` show response headers, `-v` show the whole conversation including the
@@ -309,7 +331,8 @@ TLS handshake, `-s` hide the progress meter, `-X DELETE` choose a different meth
 | ---- | ----- |
 | Post size | 280 bytes |
 | Handle | lowercase letters, digits, underscore, 1 to 20 characters |
-| Password | 8 to 128 bytes |
+| Key | ed25519 only |
+| Signed request lifetime | 5 minutes |
 | Requests | 60 per minute per address |
 | Posts | 20 per 10 minutes per handle |
 | Registration attempts | 5 per hour per address |
@@ -331,8 +354,8 @@ Every HTTP answer starts with a three digit code. The first digit tells you the 
 | ---- | ---- | ------------------ |
 | 200 | OK | The request worked. |
 | 201 | Created | Your post or account now exists. |
-| 400 | Bad Request | You sent something malformed: bad handle, short password, empty or non text post. |
-| 401 | Unauthorized | Missing or wrong handle or password. |
+| 400 | Bad Request | You sent something malformed: bad handle, a public key that is not ed25519, an empty or non text post. |
+| 401 | Unauthorized | Missing or bad signature, wrong key, clock more than 5 minutes off, or a request used twice. |
 | 403 | Forbidden | Wrong registration answer, or the question changed. |
 | 404 | Not Found | No such post or profile. |
 | 405 | Method Not Allowed | DELETE, PUT and friends do not exist here. |
@@ -345,22 +368,30 @@ Every HTTP answer starts with a three digit code. The first digit tells you the 
 ## 7. When something goes wrong
 
 **`zsh: command not found: 443`** (or any answer you typed on its own). The answer is not a
-command. It goes inside the register command, in `-d 'answer=YOUR_ANSWER'`.
+command. It goes after `A=` on the first line of the register commands.
 
 **`curl: (2) no URL specified`** (or `curl: try 'curl --help'`). You left off the web address at
 the end of the command. Every curl command ends with an address such as
 `https://packet.social/register`. Copy the whole line.
 
-**`401 Unauthorized`.** The handle or password is wrong, or you forgot `-u`. Handles are all
-lowercase. Wrap the credentials in single quotes so symbols like `!` and `$` are not
-interpreted by your shell.
+**`401 Unauthorized`.** The signature did not check out. The usual causes:
+you changed the words after signing, the handle in `H=` differs from the one you registered,
+you used a different key file, you copied only some of the three lines, or your clock is wrong
+(the error then says how many seconds off you are). Run all three lines again from the top.
+`this exact request was already used` means the same signed request was sent twice, so just run the
+three lines again to make a fresh one.
+
+**`Load key ... No such file or directory`.** You have not made your key yet. Run
+`ssh-keygen -t ed25519 -f ~/.ssh/packet_social`.
+
+**`ssh-keygen: illegal option -- Y`.** Your OpenSSH is too old (older than 8.0). Update your system.
 
 **`403 Forbidden` when registering.** The answer was wrong, or the question changed. Run
 `curl https://packet.social/register` again and answer the question you get now.
 
 **`400 Bad Request`.** Read the line under it, the server says what it did not like. Common
-causes: a handle with capitals or symbols, a password under 8 characters, an empty post, or a post
-containing invisible control characters.
+causes: a handle with capitals or symbols, a public key that is not ed25519, an empty post, or a
+post containing invisible control characters.
 
 **`409 Conflict`.** Someone has that handle. Choose another.
 
@@ -377,7 +408,7 @@ see the `Retry-After` header, wait that many seconds, then try again.
 address, and UDP packets can be lost or blocked. Some networks block outgoing UDP on unusual
 ports. Try again from another network, such as a phone hotspot.
 
-**`curl: command not found`.** Install it, or on Windows use `curl.exe` in PowerShell.
+**`curl: command not found`.** Install it. On Windows, use WSL.
 
 **An SSL or certificate error.** Check that your computer's date and time are correct.
 Certificates are only valid within a date range.
@@ -396,7 +427,7 @@ curl -i https://packet.social/status      # see the headers the server sends
 curl -v https://packet.social/status      # watch the TLS handshake and the whole request
 curl -X DELETE https://packet.social/post/1   # get a 405 and read the Allow header
 curl -i https://packet.social/post/999999     # a 404
-curl -i -u 'nobody:nothing1234' --data-binary 'x' https://packet.social/post   # a 401
+curl -i --data-binary 'x' https://packet.social/post   # a 401, no signature
 nslookup packet.social                    # what address does the name point to
 ping packet.social                        # does it answer, how fast
 traceroute packet.social                  # every router between you and the server
@@ -443,7 +474,8 @@ printf 'hello' | xxd
 | Packet | One small chunk of data on the network. |
 | Header | Extra lines of information sent with a request or a reply. |
 | Status code | The three digit result of an HTTP request. |
-| Basic auth | Sending a handle and password with a request (`curl -u`). Safe over TLS. |
+| Key pair | A private key you keep secret and a public key you share. Made with `ssh-keygen`. |
+| Signature | Proof that a message came from the holder of a private key, checked with the public key. |
 | Byte | The unit of size. A plain letter is one byte. |
 | Unix time | Seconds since 1 January 1970, used for timestamps. |
 | Rate limit | A cap on how often you may ask. |
@@ -521,7 +553,8 @@ curl http://127.0.0.1:8080/register
    ufw allow 6969/udp
    ufw enable
    ```
-3. Install Caddy (see the official Caddy install page for Debian and Ubuntu) and git.
+3. Install Caddy (see the official Caddy install page for Debian and Ubuntu), git and
+   `openssh-client` (the server uses `ssh-keygen` to check signatures; `deploy/install.sh` installs it).
 4. Edit the domain in `deploy/Caddyfile` and the IP in `deploy/packet.service`.
 5. Clone and install:
    ```
@@ -570,8 +603,9 @@ answer. Edit the list, keep every answer findable in the manual or one command a
 What is in place:
 
 - **Encryption.** All reading and writing goes over HTTPS. Caddy manages the certificate.
-- **Passwords** are stored as scrypt hashes with a random salt. The server never keeps them in
-  plain text, and a request for an unknown handle takes about as long as a wrong password.
+- **No passwords.** The server stores only your public key. Every post and registration is signed
+  with your private key, which never leaves your computer. Nothing secret is ever sent or stored.
+- **Replay protection.** A signed request is valid for 5 minutes and can be used once.
 - **Likes** are stored against a keyed hash of the sender's address, not the address itself.
 - **Rate limits** on requests, posts, registration and UDP.
 - **Input checks.** Size limits are enforced before the body is read, posts must be valid
@@ -585,8 +619,8 @@ Honest limits:
   best effort by design.
 - **Shared addresses share limits.** People behind one router or mobile carrier share a
   rate limit and a like.
-- **No password reset, no account deletion, no edit or delete of posts.** That is deliberate for
-  now, but it means mistakes are permanent.
+- **No key recovery, no account deletion, no edit or delete of posts.** Lose your private key and the
+  handle is gone. That is deliberate for now, but it means mistakes are permanent.
 - **No moderation tools.** The operator can remove rows directly in the SQLite file. There is
   no in app way to do it.
 - **One server, one database.** There is no clustering and no failover.
