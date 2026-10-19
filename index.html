@@ -4,722 +4,248 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>packet.social</title>
+<meta name="description" content="A social network you reach with a terminal. Learn networking by using it.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23150E06'/%3E%3Cg%20fill='none'%20stroke='%23F28C00'%20stroke-width='5'%3E%3Crect%20x='14'%20y='14'%20width='15'%20height='15'%20rx='3'/%3E%3Crect%20x='35'%20y='14'%20width='15'%20height='15'%20rx='3'/%3E%3Crect%20x='14'%20y='35'%20width='15'%20height='15'%20rx='3'/%3E%3Crect%20x='35'%20y='35'%20width='15'%20height='15'%20rx='3'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;800&family=Newsreader:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
 <style>
-/* packet.social. Layout: one orange frame holding a bento board of tiles. Every tile drags by its title bar and resizes by the corner.
-   Tiles snap to a 10 column grid, push neighbours down, then close gaps upward.
-   Palettes: black (dark tiles), sketch (orange board, white tiles), mixed (black board, white tiles).
-   Color: black, white, one orange. Type: JetBrains Mono for everything, Newsreader for posts written by people. */
+/* packet.social landing page. Black, white, one orange. JetBrains Mono for everything, Newsreader for posts written by people. */
 :root {
   --orange: #F28C00;
-  --orange-ink: #A85F00;
-  --board: #000000;
-  --frame: #F28C00;
-  --tile: #0D0D0D;
-  --tile-line: #2A2A2A;
-  --bar: #161616;
+  --bg: #000000;
+  --panel: #0D0D0D;
+  --line: #2A2A2A;
   --ink: #FFFFFF;
   --muted: #A9A9A9;
-  --cmd: #F28C00;
-  --reply: #FFFFFF;
-  --chip: #F28C00;
-  --on-orange: #000000;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --serif: "Newsreader", Georgia, "Iowan Old Style", serif;
   color-scheme: dark;
 }
-:root[data-pal="sketch"] {
-  --board: #F28C00; --frame: #F28C00; --tile: #FFFFFF; --tile-line: #FFFFFF; --bar: #F4F4F2;
-  --ink: #0A0A0A; --muted: #55524C; --cmd: #A85F00; --reply: #0A0A0A; --chip: #0A0A0A; --on-orange: #FFFFFF;
-  color-scheme: light;
-}
-:root[data-pal="mixed"] {
-  --board: #000000; --frame: #F28C00; --tile: #FFFFFF; --tile-line: #FFFFFF; --bar: #F28C00;
-  --ink: #0A0A0A; --muted: #55524C; --cmd: #A85F00; --reply: #0A0A0A; --chip: #F28C00; --on-orange: #000000;
-  color-scheme: light;
-}
-
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  background: var(--board);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.6;
-  padding-block: 20px 28px;
+  font-size: 14px;
+  line-height: 1.65;
+  padding-block: 20px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  transition: background .25s;
 }
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--board); }
-:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-:root[data-pal="black"] :focus-visible, :root:not([data-pal]) :focus-visible { outline-color: var(--orange); }
+:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+a { color: var(--orange); text-underline-offset: 3px; }
+p { margin: 0 0 12px; }
 
-.frame {
-  max-width: 1180px;
-  margin: 0 auto;
-  background: var(--frame);
-  border-radius: 28px;
-  padding: 10px;
-  transition: background .25s;
-}
-.board { position: relative; width: 100%; }
+.wrap { max-width: 880px; margin: 0 auto; }
+.frame { background: var(--orange); border-radius: 28px; padding: 10px; }
+.page { background: var(--bg); border-radius: 20px; padding: clamp(18px, 4vw, 40px); display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(28px, 5vw, 48px); }
 
-/* ---------- tiles ---------- */
-.tile {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  background: var(--tile);
-  color: var(--ink);
-  border: 1px solid var(--tile-line);
-  border-radius: 16px;
-  overflow: hidden;
-  min-width: 0;
-  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, background .25s, border-color .25s;
-}
-.tile.live { transition: background .25s, border-color .25s; z-index: 5; box-shadow: 0 14px 34px rgba(0,0,0,.45); }
-.tile.live .bar { cursor: grabbing; }
-.bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--bar);
-  font-size: 10px;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-  border-bottom: 1px solid var(--tile-line);
-}
-:root[data-pal="sketch"] .bar { border-bottom-color: #E6E4DE; }
-.bar b { color: var(--ink); font-weight: 500; }
-.bar .dots { margin-left: auto; letter-spacing: -2px; color: var(--orange); font-size: 14px; line-height: 1; }
-:root[data-pal="sketch"] .bar .dots, :root[data-pal="mixed"] .bar .dots { color: var(--orange-ink); }
-:root[data-pal="mixed"] .bar { color: #000; }
-:root[data-pal="mixed"] .bar b { color: #000; }
-:root[data-pal="mixed"] .bar .dots { color: #000; }
-.body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 14px; scrollbar-width: thin; }
-.grip {
-  position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize; touch-action: none;
-  background: linear-gradient(135deg, transparent 0 52%, var(--orange) 52% 58%, transparent 58% 70%, var(--orange) 70% 76%, transparent 76%);
-}
-:root[data-pal="sketch"] .grip, :root[data-pal="mixed"] .grip {
-  background: linear-gradient(135deg, transparent 0 52%, #0A0A0A 52% 58%, transparent 58% 70%, #0A0A0A 70% 76%, transparent 76%);
-}
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: .24em; font-size: 15px; }
+.brand svg { width: 38px; height: 38px; flex: none; }
+.pill { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.pill b { font-weight: 500; }
+.pill.up { color: var(--orange); border-color: var(--orange); }
 
-/* ---------- content ---------- */
-.cmd { display: block; white-space: pre; color: var(--cmd); }
-.cmd::before { content: "$ "; color: var(--muted); user-select: none; }
-.rep { display: block; white-space: pre; color: var(--reply); }
-.note { display: block; white-space: pre; color: var(--muted); }
-.gap { display: block; height: 8px; }
-.code { overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
-p { margin: 0 0 8px; }
+h1 { margin: 0 0 14px; font-size: clamp(28px, 6vw, 52px); line-height: 1.08; font-weight: 800; letter-spacing: -.02em; text-wrap: balance; }
+h1 i { font-style: normal; color: var(--orange); }
+h2 { margin: 0 0 14px; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.lead { color: var(--muted); max-width: 58ch; font-size: 15px; }
 
-.head { display: flex; flex-direction: column; justify-content: center; gap: 6px; height: 100%; padding: 10px 18px 14px; }
-.head h1 { margin: 0; font-weight: 800; font-size: clamp(22px, 4.4vw, 40px); letter-spacing: .3em; line-height: 1; }
-.head h1 i { font-style: normal; color: var(--orange); }
-:root[data-pal="sketch"] .head h1 i, :root[data-pal="mixed"] .head h1 i { color: var(--orange-ink); }
-.head p { margin: 0; color: var(--muted); max-width: 60ch; }
-.ctl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
-.ctl button {
-  font: inherit; background: none; border: 0; padding: 2px 0; color: var(--muted); cursor: pointer;
-  border-bottom: 2px solid transparent;
-}
-.ctl button::before { content: "$ "; opacity: .6; }
-.ctl button:hover { color: var(--ink); }
-.ctl button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--orange); }
-.ctl .sep { color: var(--muted); }
+.cmdbox { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--orange); border-radius: 14px; padding: 14px 16px; margin-top: 22px; }
+.cmdbox code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: clamp(11px, 3vw, 19px); color: var(--orange); scrollbar-width: none; }
+.cmdbox code::before { content: "$ "; color: var(--muted); }
+.copy { flex: none; font: inherit; font-size: 12px; background: var(--orange); color: #000; border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 500; }
+.copy:hover { filter: brightness(1.1); }
+.hint { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 
-.post { padding: 8px 0 8px 12px; border-left: 3px solid var(--orange); margin: 0 0 12px; }
-.post .m { font-size: 11px; color: var(--muted); }
-.post .m b { font-weight: 500; color: var(--cmd); }
-.post .t { font-family: var(--serif); font-size: 17px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.stat small { display: block; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.stat strong { display: block; font-size: clamp(22px, 4vw, 30px); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat.on strong { color: var(--orange); }
 
-.limits { display: grid; grid-template-columns: max-content 1fr; gap: 2px 18px; }
-.limits dt { color: var(--muted); }
-.limits dd { margin: 0; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; counter-reset: s; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--orange); color: #000; font-weight: 800; font-size: 12px; margin-bottom: 10px; }
+.step b { display: block; font-weight: 500; margin-bottom: 4px; }
+.step span { color: var(--muted); font-size: 13px; }
 
-.layers { width: 100%; border-collapse: collapse; font-size: 12px; }
-.layers td { padding: 5px 12px 5px 0; vertical-align: top; border-bottom: 1px solid var(--tile-line); }
-:root[data-pal="sketch"] .layers td { border-bottom-color: #E6E4DE; }
+.layers { width: 100%; border-collapse: collapse; font-size: 13px; }
+.layers td { padding: 8px 14px 8px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
 .layers td:first-child { white-space: nowrap; }
 .layers td:last-child { color: var(--muted); }
-.bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; }
-.bars .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
-.bars .col .n { font-size: 11px; font-variant-numeric: tabular-nums; }
-.bars .col .b { width: 100%; background: var(--orange); border-radius: 4px 4px 0 0; min-height: 2px; }
-:root[data-pal="sketch"] .bars .col .b, :root[data-pal="mixed"] .bars .col .b { background: var(--orange-ink); }
-.bars .col .l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.rank { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 0 0 8px; }
-.rank .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rank .c { color: var(--muted); font-variant-numeric: tabular-nums; }
-.rank .bar2 { grid-column: 1 / -1; height: 4px; background: var(--tile-line); border-radius: 2px; overflow: hidden; }
-.rank .bar2 i { display: block; height: 100%; background: var(--orange); }
-:root[data-pal="sketch"] .rank .bar2 { background: #E6E4DE; }
-:root[data-pal="sketch"] .rank .bar2 i, :root[data-pal="mixed"] .rank .bar2 i { background: var(--orange-ink); }
-.big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
-.big small { font-size: 11px; font-weight: 400; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
-.chip { display: flex; flex-direction: column; justify-content: center; height: 100%; padding: 0 14px 6px; }
-.chip small { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-.chip strong { font-size: clamp(16px, 2.2vw, 24px); font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.chip.on strong { color: var(--cmd); }
 
-.term { display: flex; flex-direction: column; height: 100%; padding: 10px 14px; cursor: text; }
-.tout { flex: 1 1 auto; min-height: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
-.tout .c { color: var(--cmd); }
-.tout .m { color: var(--muted); }
-.tin { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; padding-top: 6px; color: var(--muted); }
-.tin input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--cmd); font: inherit; caret-color: var(--cmd); }
+.code { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; overflow-x: auto; white-space: pre; color: var(--orange); margin: 0 0 10px; scrollbar-width: thin; }
+.code::before { content: "$ "; color: var(--muted); user-select: none; }
 
-/* ---------- narrow screens: plain stack, no dragging ---------- */
-.board.flow { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; height: auto !important; }
-.board.flow .tile { position: static; width: auto !important; height: auto !important; grid-column: 1 / -1; transition: none; }
-.board.flow .tile.small { grid-column: auto; }
-.board.flow .grip { display: none; }
-.board.flow .bar { cursor: default; }
-.board.flow .body { overflow: visible; }
-.board.flow .head, .board.flow .chip { height: auto; padding-top: 14px; }
-.board.flow .term { height: auto; }
-.board.flow .tout { max-height: 260px; }
+.posts { display: grid; gap: 10px; }
+.post { border-left: 3px solid var(--orange); padding: 4px 0 4px 14px; }
+.post .m { font-size: 11px; color: var(--muted); }
+.post .m b { font-weight: 500; color: var(--orange); }
+.post .t { font-family: var(--serif); font-size: 18px; line-height: 1.45; overflow-wrap: anywhere; }
 
-@media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(28px, 5vw, 48px); }
+.foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 18px; }
 </style>
 </head>
 <body>
-
+<div class="wrap">
 <div class="frame">
-  <div class="board" id="board" aria-label="Movable tiles. Drag a title bar to move a tile and the corner to resize it."></div>
+<main class="page">
+
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 64 64" role="img" aria-label="packet.social logo"><rect width="64" height="64" rx="14" fill="#150E06"/><g fill="none" stroke="#F28C00" stroke-width="5"><rect x="14" y="14" width="15" height="15" rx="3"/><rect x="35" y="14" width="15" height="15" rx="3"/><rect x="14" y="35" width="15" height="15" rx="3"/><rect x="35" y="35" width="15" height="15" rx="3"/></g></svg>
+      PACKET
+    </div>
+    <div class="pill" id="state" role="status">server <b id="state-t">checking</b></div>
+  </header>
+
+  <section>
+    <h1>A social network you reach <i>with a terminal.</i></h1>
+    <p class="lead">There is no app and no website to scroll. You connect from your own terminal, and every post you read, send or like crosses the same network you are trying to learn. Built for people learning networking.</p>
+    <div class="cmdbox">
+      <code id="join">ssh -p 2222 packet.social</code>
+      <button class="copy" type="button" id="copy">copy</button>
+    </div>
+    <p class="hint">Paste it into Terminal (Mac or Linux) or PowerShell (Windows). No install, no password. Your SSH key is your account. No key yet? Run <b>ssh-keygen -t ed25519</b> once and press Enter at each question. Just want a look first? Use <b>ssh -p 2222 guest@packet.social</b>, no key needed.</p>
+  </section>
+
+  <section aria-label="Live numbers">
+    <h2>live from the server</h2>
+    <div class="stats">
+      <div class="stat" id="s-server"><small>server</small><strong>...</strong></div>
+      <div class="stat"><small>users</small><strong id="s-users">...</strong></div>
+      <div class="stat"><small>posts</small><strong id="s-posts">...</strong></div>
+      <div class="stat"><small>likes</small><strong id="s-likes">...</strong></div>
+      <div class="stat"><small>uptime</small><strong id="s-up">...</strong></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>how it works</h2>
+    <div class="steps">
+      <div class="step"><b>Open a terminal</b><span>Any terminal that has SSH. Mac, Linux and Windows 10 or later all do.</span></div>
+      <div class="step"><b>Run the command</b><span>Your computer makes a connection and proves who it is with a key. Nothing to sign up for.</span></div>
+      <div class="step"><b>Pick a handle</b><span>Then read the feed, post, like, and work through the daily challenge.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>what you will learn</h2>
+    <table class="layers"><tbody>
+      <tr><td>L7 application</td><td>methods, headers, status codes, signed requests</td></tr>
+      <tr><td>L6 presentation</td><td>TLS, base64, hex, bytes versus characters</td></tr>
+      <tr><td>L5 session</td><td>keeping a connection open</td></tr>
+      <tr><td>L4 transport</td><td>TCP for posts, UDP for likes</td></tr>
+      <tr><td>L3 network</td><td>addresses, subnets, routes</td></tr>
+      <tr><td>L2 data link</td><td>MAC addresses, your local network</td></tr>
+      <tr><td>L1 physical</td><td>your cable or radio, not our problem</td></tr>
+    </tbody></table>
+  </section>
+
+  <div class="two">
+    <section id="hard-mode">
+      <h2>hard mode</h2>
+      <p class="lead">The same network is open to raw tools. Use curl to post with a signed request and netcat to send a like as one UDP packet. Doing it by hand earns a badge. The full guide is in the <a href="https://github.com/kblssd/packet-social-web#readme">README</a>.</p>
+      <span class="code">curl https://packet.social/status</span>
+      <span class="code">curl https://packet.social/feed</span>
+    </section>
+    <section>
+      <h2>latest on the network</h2>
+      <div class="posts" id="posts"><p class="hint">Loading.</p></div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span>packet.social, open source</span>
+    <span><a href="https://github.com/kblssd/packet-social-web">github.com/kblssd/packet-social-web</a></span>
+  </footer>
+
+</main>
+</div>
 </div>
 
 <script>
 (function () {
   "use strict";
 
-  var COLS = 10, ROW = 44, GAP = 10, PAD = 0;
+  function $(id) { return document.getElementById(id); }
+  function set(id, v) { var n = $(id); if (n) n.textContent = v; }
 
-  /* ---------- tile content ---------- */
-  var TILES = {
-    head: { title: "packet.social", html:
-      '<div class="head"><h1>PACK<i>E</i>T</h1>' +
-      '<p>A social network you have to learn networking to use.</p>' +
-      '<div class="ctl" role="group" aria-label="Palette and layout">' +
-      '<button type="button" data-pal="black">black</button>' +
-      '<button type="button" data-pal="sketch">sketch</button>' +
-      '<button type="button" data-pal="mixed">mixed</button>' +
-      '<span class="sep">|</span>' +
-      '<button type="button" data-act="reset">reset layout</button></div></div>', bare: true },
-
-    term: { title: "terminal (read only)", html:
-      '<div class="term"><div class="tout" id="t-out" role="log" aria-live="polite"></div>' +
-      '<label class="tin"><span>$</span><input id="t-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Terminal input"></label></div>', bare: true },
-
-    feed: { title: "get /feed", html:
-      '<p class="note" id="feed-note" style="white-space:normal">Sample posts, loading the live feed.</p><div id="feed"></div>' },
-
-    start: { title: "get started", html:
-      '<p>No passwords. You make a key pair and sign each request. Every command is one line: copy all of it, including the web address.</p><div class="code">' +
-      '<span class="note"># 1. is the server alive?</span>' +
-      '<span class="cmd">curl https://packet.social/status</span>' +
-      '<span class="gap"></span>' +
-      '<span class="note"># 2. make your key pair, once</span>' +
-      '<span class="cmd">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>' +
-      '<span class="gap"></span>' +
-      '<span class="note"># 3. get the question. The reply prints these commands for you.</span>' +
-      '<span class="cmd">curl https://packet.social/register</span>' +
-      '<span class="gap"></span>' +
-      '<span class="note"># 4. register: change H= (handle) and A= (answer, any case), copy all three lines</span>' +
-      '<span class="cmd">H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)</span>' +
-      '<span class="cmd">S=$(printf \'%s\' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
-      '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>' +
-      '<span class="rep">201 Created, then a welcome message</span></div>' +
-      '<p class="note" style="white-space:normal;margin-top:8px">Handles are lowercase letters, digits and underscore, up to 20. There is no key recovery, so back up ~/.ssh/packet_social.</p>' },
-
-    use: { title: "use it", html:
-      '<div class="code">' +
-      '<span class="note"># post: change H= and B=, copy all three lines (280 bytes at most)</span>' +
-      '<span class="cmd">H=yourhandle; B=\'hello from the wire\'; T=$(date +%s)</span>' +
-      '<span class="cmd">S=$(printf \'%s\' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
-      '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>' +
-      '<span class="gap"></span>' +
-      '<span class="note"># like post 3: one UDP packet, nothing comes back</span>' +
-      '<span class="cmd">echo -n \'LIKE:3\' | nc -u -w1 packet.social 6969</span>' +
-      '<span class="gap"></span>' +
-      '<span class="note"># read</span>' +
-      '<span class="cmd">curl https://packet.social/feed</span>' +
-      '<span class="cmd">curl https://packet.social/post/3</span>' +
-      '<span class="cmd">curl https://packet.social/profile/ada</span></div>' +
-      '<p class="note" style="white-space:normal;margin-top:8px">The signature covers your handle, the time and your exact words, and each signed request works once.</p>' },
-
-    activity: { title: "posts per day", html:
-      '<div class="bars" id="d-activity"></div><p class="note" id="d-activity-note" style="white-space:normal;margin:8px 0 0"></p>' },
-
-    liked: { title: "most liked", html: '<div id="d-liked"></div>' },
-
-    top: { title: "top posters", html: '<div id="d-top"></div><p class="note" style="white-space:normal;margin:8px 0 0">From the newest 50 posts.</p>' },
-
-    rules: { title: "rules", html:
-      '<dl class="limits">' +
-      '<dt>post size</dt><dd>280 bytes</dd>' +
-      '<dt>requests</dt><dd>60 a minute</dd>' +
-      '<dt>posts</dt><dd>20 per 10 minutes</dd>' +
-      '<dt>registering</dt><dd>5 tries an hour</dd>' +
-      '<dt>likes</dt><dd>1 per post per address</dd>' +
-      '<dt>signature</dt><dd>valid 5 minutes</dd></dl>' +
-      '<div class="gap"></div>' +
-      '<dl class="limits">' +
-      '<dt>200 201</dt><dd>worked, created</dd>' +
-      '<dt>400</dt><dd>malformed</dd>' +
-      '<dt>401</dt><dd>bad signature</dd>' +
-      '<dt>403</dt><dd>wrong answer</dd>' +
-      '<dt>404</dt><dd>not found</dd>' +
-      '<dt>405</dt><dd>nothing is deleted</dd>' +
-      '<dt>409</dt><dd>handle taken</dd>' +
-      '<dt>413</dt><dd>over 280 bytes</dd>' +
-      '<dt>429</dt><dd>slow down</dd></dl>' },
-
-    learn: { title: "what you will learn", html:
-      '<table class="layers"><tbody>' +
-      '<tr><td>L7 application</td><td>methods, headers, status codes, signed requests</td></tr>' +
-      '<tr><td>L6 presentation</td><td>TLS, base64, hex, bytes versus characters</td></tr>' +
-      '<tr><td>L5 session</td><td>keeping a connection open</td></tr>' +
-      '<tr><td>L4 transport</td><td>TCP for posts, UDP for likes</td></tr>' +
-      '<tr><td>L3 network</td><td>addresses, subnets, routes</td></tr>' +
-      '<tr><td>L2 data link</td><td>MAC addresses, your local network</td></tr>' +
-      '<tr><td>L1 physical</td><td>your cable or radio, not our problem</td></tr>' +
-      '</tbody></table>' },
-
-    c1: { title: "users", chip: ["users", "..."], id: "g-users" },
-    c2: { title: "posts", chip: ["posts", "..."], id: "g-posts" },
-    c3: { title: "likes", chip: ["likes", "..."], id: "g-likes" },
-    c4: { title: "newest post", chip: ["newest", "..."], id: "g-newest" },
-    c5: { title: "server", chip: ["server", "..."], id: "g-state" }
-  };
-
-  var DEFAULT = [
-    { id: "head",     x: 0, y: 0,  w: 10, h: 3 },
-    { id: "term",     x: 0, y: 3,  w: 5,  h: 8 },
-    { id: "start",    x: 0, y: 11, w: 5,  h: 8 },
-    { id: "use",      x: 0, y: 19, w: 5,  h: 7 },
-    { id: "activity", x: 0, y: 26, w: 3,  h: 5 },
-    { id: "liked",    x: 3, y: 26, w: 2,  h: 5 },
-    { id: "rules",    x: 0, y: 31, w: 3,  h: 9 },
-    { id: "top",      x: 3, y: 31, w: 2,  h: 9 },
-    { id: "learn",    x: 0, y: 40, w: 5,  h: 5 },
-    { id: "feed",     x: 5, y: 3,  w: 5,  h: 42 },
-    { id: "c1",       x: 0, y: 45, w: 2,  h: 2 },
-    { id: "c2",       x: 2, y: 45, w: 2,  h: 2 },
-    { id: "c3",       x: 4, y: 45, w: 2,  h: 2 },
-    { id: "c4",       x: 6, y: 45, w: 2,  h: 2 },
-    { id: "c5",       x: 8, y: 45, w: 2,  h: 2 }
-  ];
-
-  var MIN = { head: [4, 2], term: [3, 4], c1: [1, 2], c2: [1, 2], c3: [1, 2], c4: [1, 2], c5: [1, 2] };
-
-  var board = document.getElementById("board");
-  var items = [];
-  var els = {};
-  var flow = false;
-  var colW = 80;
-
-  /* ---------- storage (per viewer, optional) ---------- */
-  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-  function save(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* storage unavailable */ } }
-
-  function clone(a) { return a.map(function (i) { return { id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }; }); }
-
-  function restore() {
-    var raw = load("packet-board-v5"), saved = null;
-    if (raw) { try { saved = JSON.parse(raw); } catch (e) { saved = null; } }
-    var ok = saved && saved.length === DEFAULT.length && saved.every(function (s) { return TILES[s.id] && isFinite(s.x + s.y + s.w + s.h); });
-    items = clone(ok ? saved : DEFAULT);
+  function fmtUp(s) {
+    if (!isFinite(s)) return "n/a";
+    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d) return d + "d " + h + "h";
+    if (h) return h + "h " + m + "m";
+    return m + "m";
   }
 
-  /* ---------- layout engine ---------- */
-  function minOf(id) { return MIN[id] || [2, 3]; }
-  function hit(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
-  function byId(id) { return items.filter(function (i) { return i.id === id; })[0]; }
-
-  function push(mover, depth) {
-    if (depth > 40) return;
-    items.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (o) {
-      if (o !== mover && hit(mover, o)) {
-        o.y = mover.y + mover.h;
-        push(o, depth + 1);
-      }
-    });
+  function down() {
+    $("state").className = "pill";
+    set("state-t", "down");
+    var s = $("s-server"); s.className = "stat"; s.querySelector("strong").textContent = "DOWN";
   }
 
-  function compact(fixed) {
-    items.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (it) {
-      if (it === fixed) return;
-      while (it.y > 0) {
-        it.y -= 1;
-        if (items.some(function (o) { return o !== it && hit(it, o); })) { it.y += 1; break; }
-      }
-    });
+  function up() {
+    $("state").className = "pill up";
+    set("state-t", "up");
+    var s = $("s-server"); s.className = "stat on"; s.querySelector("strong").textContent = "UP";
   }
 
-  function settle(mover) { push(mover, 0); compact(mover); }
-
-  /* ---------- rendering ---------- */
-  function build() {
-    board.textContent = "";
-    els = {};
-    items.forEach(function (it) {
-      var t = TILES[it.id];
-      var el = document.createElement("section");
-      el.className = "tile" + (t.chip ? " small" : "");
-      el.dataset.id = it.id;
-      var bar = document.createElement("div");
-      bar.className = "bar";
-      bar.tabIndex = 0;
-      bar.setAttribute("role", "button");
-      bar.setAttribute("aria-label", "Move " + t.title + ". Arrow keys move, shift and arrow keys resize.");
-      bar.innerHTML = "<b></b><span class=\"dots\">::</span>";
-      bar.firstChild.textContent = t.title;
-      var body = document.createElement("div");
-      body.className = "body";
-      if (t.chip) {
-        body.innerHTML = '<div class="chip' + (t.on ? " on" : "") + '"><strong></strong></div>';
-        body.querySelector("strong").textContent = t.chip[1];
-        if (t.id) body.querySelector("strong").id = t.id;
-        body.style.padding = "0";
-      } else {
-        body.innerHTML = t.html;
-        if (t.bare) body.style.padding = "0";
-      }
-      var grip = document.createElement("div");
-      grip.className = "grip";
-      grip.setAttribute("aria-hidden", "true");
-      el.appendChild(bar); el.appendChild(body); el.appendChild(grip);
-      board.appendChild(el);
-      els[it.id] = el;
-      wire(it.id, bar, grip);
-    });
-    document.querySelectorAll("[data-pal]").forEach(function (b) {
-      b.addEventListener("click", function () { setPal(b.getAttribute("data-pal")); });
-    });
-    var rb = document.querySelector("[data-act=reset]");
-    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v5", JSON.stringify(items)); layout(); });
-    markPal();
-  }
-
-  function px(it) {
-    return { left: PAD + it.x * (colW + GAP), top: PAD + it.y * (ROW + GAP), width: it.w * colW + (it.w - 1) * GAP, height: it.h * ROW + (it.h - 1) * GAP };
-  }
-
-  function place(el, it) {
-    var p = px(it);
-    el.style.left = p.left + "px"; el.style.top = p.top + "px";
-    el.style.width = p.width + "px"; el.style.height = p.height + "px";
-  }
-
-  function layout(skip) {
-    var w = board.clientWidth;
-    flow = window.innerWidth < 720;
-    board.classList.toggle("flow", flow);
-    if (flow) { board.style.height = ""; Object.keys(els).forEach(function (k) { els[k].style.cssText = ""; }); return; }
-    colW = (w - PAD * 2 - GAP * (COLS - 1)) / COLS;
-    var rows = 0;
-    items.forEach(function (it) {
-      rows = Math.max(rows, it.y + it.h);
-      if (it.id !== skip) place(els[it.id], it);
-    });
-    board.style.height = (rows * (ROW + GAP) - GAP + PAD * 2) + "px";
-  }
-
-  /* ---------- pointer drag and resize ---------- */
-  function wire(id, bar, grip) {
-    var el = els[id];
-
-    bar.addEventListener("pointerdown", function (e) {
-      if (flow || e.button > 0) return;
-      var it = byId(id), r = el.getBoundingClientRect(), b = board.getBoundingClientRect();
-      var dx = e.clientX - r.left, dy = e.clientY - r.top;
-      el.classList.add("live");
-      bar.setPointerCapture(e.pointerId);
-      function move(ev) {
-        var left = ev.clientX - b.left - dx, top = ev.clientY - b.top - dy;
-        el.style.left = left + "px"; el.style.top = top + "px";
-        var nx = Math.max(0, Math.min(COLS - it.w, Math.round((left - PAD) / (colW + GAP))));
-        var ny = Math.max(0, Math.round((top - PAD) / (ROW + GAP)));
-        if (nx !== it.x || ny !== it.y) { it.x = nx; it.y = ny; settle(it); layout(id); }
-      }
-      function up() {
-        bar.removeEventListener("pointermove", move);
-        bar.removeEventListener("pointerup", up);
-        bar.removeEventListener("pointercancel", up);
-        el.classList.remove("live");
-        compact(null);
-        place(el, it);
-        layout();
-        save("packet-board-v5", JSON.stringify(items));
-      }
-      bar.addEventListener("pointermove", move);
-      bar.addEventListener("pointerup", up);
-      bar.addEventListener("pointercancel", up);
-      e.preventDefault();
-    });
-
-    grip.addEventListener("pointerdown", function (e) {
-      if (flow || e.button > 0) return;
-      var it = byId(id), m = minOf(id);
-      var sx = e.clientX, sy = e.clientY, sw = it.w, sh = it.h;
-      el.classList.add("live");
-      grip.setPointerCapture(e.pointerId);
-      function move(ev) {
-        var nw = Math.max(m[0], Math.min(COLS - it.x, sw + Math.round((ev.clientX - sx) / (colW + GAP))));
-        var nh = Math.max(m[1], sh + Math.round((ev.clientY - sy) / (ROW + GAP)));
-        if (nw !== it.w || nh !== it.h) { it.w = nw; it.h = nh; settle(it); layout(); }
-      }
-      function up() {
-        grip.removeEventListener("pointermove", move);
-        grip.removeEventListener("pointerup", up);
-        grip.removeEventListener("pointercancel", up);
-        el.classList.remove("live");
-        compact(null);
-        layout();
-        save("packet-board-v5", JSON.stringify(items));
-      }
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-      grip.addEventListener("pointercancel", up);
-      e.preventDefault();
-      e.stopPropagation();
-    });
-
-    bar.addEventListener("keydown", function (e) {
-      if (flow) return;
-      var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-      if (!d) return;
-      e.preventDefault();
-      var it = byId(id), m = minOf(id);
-      if (e.shiftKey) {
-        it.w = Math.max(m[0], Math.min(COLS - it.x, it.w + d[0]));
-        it.h = Math.max(m[1], it.h + d[1]);
-      } else {
-        it.x = Math.max(0, Math.min(COLS - it.w, it.x + d[0]));
-        it.y = Math.max(0, it.y + d[1]);
-      }
-      settle(it); layout();
-      save("packet-board-v5", JSON.stringify(items));
-    });
-  }
-
-  /* ---------- palette ---------- */
-  function markPal() {
-    var cur = document.documentElement.getAttribute("data-pal") || "black";
-    document.querySelectorAll("[data-pal]").forEach(function (b) {
-      b.setAttribute("aria-pressed", b.getAttribute("data-pal") === cur ? "true" : "false");
-    });
-  }
-  function setPal(p) {
-    document.documentElement.setAttribute("data-pal", p);
-    save("packet-board-pal", p);
-    markPal();
-  }
-
-  var savedPal = load("packet-board-pal");
-  document.documentElement.setAttribute("data-pal", savedPal === "sketch" || savedPal === "mixed" ? savedPal : "black");
-
-  /* ---------- live data ---------- */
-  var SAMPLE = [
-    { id: 3, who: "mtu_truther", t: 1785953301, likes: 12, text: "Fifteen hundred bytes. Why fifteen hundred. Ask your router what it is not telling you." },
-    { id: 2, who: "bofh", t: 1785949988, likes: 61, text: "DNS is not down. DNS is a rumor all of you have agreed to believe." },
-    { id: 1, who: "rfc1149", t: 1785944102, likes: 4, text: "Held one TCP connection open for nineteen days to see who would blink first. The router did." }
-  ];
-
-  function renderFeed(list, live) {
-    var box = document.getElementById("feed"), note = document.getElementById("feed-note");
-    if (!box) return;
+  function showPosts(list) {
+    var box = $("posts");
     box.textContent = "";
-    note.textContent = live ? "Live. This window is read only. Posting happens in your terminal." : "Sample posts. The live feed could not be reached.";
     if (!list.length) {
-      var p = document.createElement("p");
-      p.className = "note"; p.style.whiteSpace = "normal";
-      p.textContent = "No posts yet. Register, then post the first one.";
-      box.appendChild(p);
-      return;
+      var p = document.createElement("p"); p.className = "hint"; p.textContent = "No posts yet. Be the first.";
+      box.appendChild(p); return;
     }
-    list.forEach(function (it) {
+    list.slice(0, 3).forEach(function (it) {
       var post = document.createElement("div"); post.className = "post";
       var m = document.createElement("div"); m.className = "m";
       var b = document.createElement("b"); b.textContent = "@" + it.who;
-      m.appendChild(b);
-      m.appendChild(document.createTextNode(" #" + it.id + " likes=" + it.likes));
-      if (isFinite(it.t)) m.title = new Date(it.t * 1000).toISOString();
+      m.appendChild(b); m.appendChild(document.createTextNode(" #" + it.id + "  likes " + it.likes));
       var t = document.createElement("div"); t.className = "t"; t.textContent = it.text;
-      post.appendChild(m); post.appendChild(t);
-      box.appendChild(post);
+      post.appendChild(m); post.appendChild(t); box.appendChild(post);
     });
   }
 
-  function el2(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
-
-  function renderStats(list) {
-    var now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-    var days = [0, 0, 0, 0, 0, 0, 0], total = 0, likes = 0, newest = 0, counts = {}, best = null;
-    list.forEach(function (p) {
-      likes += p.likes; if (p.id > newest) newest = p.id;
-      counts[p.who] = (counts[p.who] || 0) + 1;
-      if (!best || p.likes > best.likes || (p.likes === best.likes && p.id > best.id)) best = p;
-      if (isFinite(p.t)) {
-        var ago = p.t >= start ? 0 : Math.ceil((start - p.t) / 86400);
-        if (ago <= 6) { days[6 - ago]++; total++; }
-      }
-    });
-
-    var act = document.getElementById("d-activity");
-    if (act) {
-      act.textContent = "";
-      var max = Math.max.apply(null, days.concat([1])), letters = "SMTWTFS";
-      days.forEach(function (n, i) {
-        var col = el2("div", "col");
-        col.appendChild(el2("span", "n", String(n)));
-        var b = el2("div", "b"); b.style.height = Math.round(n / max * 80) + "px";
-        col.appendChild(b);
-        var d = new Date((start - (6 - i) * 86400) * 1000);
-        col.appendChild(el2("span", "l", letters.charAt(d.getDay())));
-        act.appendChild(col);
-      });
-      document.getElementById("d-activity-note").textContent = total + (total === 1 ? " post" : " posts") + " in the last 7 days, counted from the newest 50.";
-    }
-
-    var lk = document.getElementById("d-liked");
-    if (lk) {
-      lk.textContent = "";
-      if (best && best.likes > 0) {
-        var big = el2("div", "big", String(best.likes)); big.appendChild(el2("small", "", "likes"));
-        lk.appendChild(big);
-        var post = el2("div", "post");
-        var m = el2("div", "m"); m.appendChild(el2("b", "", "@" + best.who)); m.appendChild(document.createTextNode(" #" + best.id));
-        post.appendChild(m); post.appendChild(el2("div", "t", best.text));
-        lk.appendChild(post);
-      } else {
-        lk.appendChild(el2("p", "note", "No likes yet. Send the first one:"));
-        lk.lastChild.style.whiteSpace = "normal";
-        lk.appendChild(el2("span", "cmd", "echo -n 'LIKE:1' | nc -u -w1 packet.social 6969"));
-      }
-    }
-
-    var tp = document.getElementById("d-top");
-    if (tp) {
-      tp.textContent = "";
-      var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || (a < b ? -1 : 1); }).slice(0, 5);
-      if (!names.length) tp.appendChild(el2("p", "note", "Nobody has posted yet."));
-      names.forEach(function (n) {
-        var row = el2("div", "rank");
-        row.appendChild(el2("span", "who", "@" + n)); row.appendChild(el2("span", "c", String(counts[n])));
-        var bar = el2("div", "bar2"), fill = document.createElement("i");
-        fill.style.width = Math.round(counts[n] / counts[names[0]] * 100) + "%";
-        bar.appendChild(fill); row.appendChild(bar); tp.appendChild(row);
-      });
-    }
-
-    setChip("g-likes", String(likes));
-    setChip("g-newest", newest ? "#" + newest : "none");
-  }
-
-  function initTerm() {
-    var out = document.getElementById("t-out"), inp = document.getElementById("t-in");
-    if (!out || !inp) return;
-    var hist = [], hi = 0;
-    function line(text, cls) { out.appendChild(el2("div", cls || "", text)); out.scrollTop = out.scrollHeight; }
-    function get(path) {
-      if (!window.fetch || location.protocol === "file:") { line("Preview mode: no live server here.", "m"); return; }
-      fetch(path, { cache: "no-store" })
-        .then(function (r) { return r.text().then(function (t) { return { s: r.status, t: t }; }); })
-        .then(function (x) { line(x.t.replace(/\s+$/, "") || "(empty)"); if (x.s >= 400) line("HTTP " + x.s, "m"); })
-        .catch(function () { line("Could not reach the server.", "m"); });
-    }
-    var HELP = [
-      "status          is the server alive",
-      "feed            the newest posts",
-      "read ID         one post, e.g. read 3",
-      "profile NAME    one person, e.g. profile ada",
-      "like ID         shows the command to like a post",
-      "post            shows how to post",
-      "register        shows how to join",
-      "clear           empty this window"
-    ];
-    function run(raw) {
-      var a = raw.trim().split(/\s+/), c = (a[0] || "").toLowerCase(), arg = a[1] || "";
-      line("$ " + raw, "c");
-      if (!c) return;
-      if (c === "help") { HELP.forEach(function (h) { line(h); }); }
-      else if (c === "clear") { out.textContent = ""; }
-      else if (c === "status") { get("/status"); }
-      else if (c === "feed") { get("/feed"); }
-      else if (c === "read") {
-        if (/^[0-9]{1,9}$/.test(arg)) get("/post/" + arg); else line("Usage: read 3", "m");
-      }
-      else if (c === "profile") {
-        if (/^[a-z0-9_]{1,20}$/.test(arg.toLowerCase())) get("/profile/" + arg.toLowerCase()); else line("Usage: profile ada", "m");
-      }
-      else if (c === "like") {
-        if (/^[0-9]{1,9}$/.test(arg)) { line("Run this in your own terminal:", "m"); line("echo -n 'LIKE:" + arg + "' | nc -u -w1 packet.social 6969"); }
-        else line("Usage: like 3", "m");
-      }
-      else if (c === "post") { line("Posting needs your private key, so it only works in your own terminal. See the use it tile.", "m"); }
-      else if (c === "register") { line("Run this in your own terminal:", "m"); line("curl https://packet.social/register"); }
-      else { line("command not found: " + c + ". Type help.", "m"); }
-    }
-    line("packet.social read only terminal. Type help.", "m");
-    inp.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        var v = inp.value; inp.value = "";
-        if (v.trim()) { hist.push(v); hi = hist.length; }
-        run(v);
-      } else if (e.key === "ArrowUp") {
-        if (hi > 0) { hi--; inp.value = hist[hi]; } e.preventDefault();
-      } else if (e.key === "ArrowDown") {
-        if (hi < hist.length - 1) { hi++; inp.value = hist[hi]; } else { hi = hist.length; inp.value = ""; } e.preventDefault();
-      }
-    });
-    out.parentNode.addEventListener("click", function () { if (!window.getSelection || !String(window.getSelection())) inp.focus(); });
-  }
-
-  function setChip(id, text, on) {
-    var n = document.getElementById(id);
-    if (!n) return;
-    n.textContent = text;
-    n.parentNode.classList.toggle("on", !!on);
-  }
-
-  function loadLive() {
-    if (!window.fetch || location.protocol === "file:") { renderFeed(SAMPLE, false); renderStats(SAMPLE); setChip("g-state", "PREVIEW"); return; }
-    renderFeed(SAMPLE, false);
-    renderStats(SAMPLE);
+  if (location.protocol === "file:" || !window.fetch) {
+    set("state-t", "preview");
+    showPosts([]);
+  } else {
     fetch("/status.json", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (s) { setChip("g-users", String(s.users)); setChip("g-posts", String(s.posts)); setChip("g-state", "UP", true); })
-      .catch(function () { setChip("g-state", "DOWN"); });
+      .then(function (s) {
+        up();
+        set("s-users", String(s.users)); set("s-posts", String(s.posts));
+        if (s.likes !== undefined) set("s-likes", String(s.likes));
+        if (s.uptime !== undefined) set("s-up", fmtUp(s.uptime));
+      })
+      .catch(down);
     fetch("/feed.json", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (list) { renderFeed(list, true); renderStats(list); layout(); })
-      .catch(function () { /* keep the sample */ });
+      .then(showPosts)
+      .catch(function () { set("posts", ""); });
   }
 
-  restore();
-  build();
-  initTerm();
-  layout();
-  loadLive();
-  window.addEventListener("resize", function () { layout(); });
-  if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(board);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { layout(); });
+  var btn = $("copy");
+  btn.addEventListener("click", function () {
+    var text = $("join").textContent, done = function () { btn.textContent = "copied"; setTimeout(function () { btn.textContent = "copy"; }, 1500); };
+    var fallback = function () {
+      var r = document.createRange(); r.selectNodeContents($("join"));
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      btn.textContent = "selected";
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+      else fallback();
+    } catch (e) { fallback(); }
+  });
 })();
 </script>
-
 </body>
 </html>

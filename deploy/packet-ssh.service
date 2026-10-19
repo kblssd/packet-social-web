@@ -1,0 +1,23 @@
+[Unit]
+Description=packet.social SSH app
+After=network.target packet.service
+
+[Service]
+User=packet
+Group=packet
+ExecStart=/usr/bin/python3 /opt/packet-social-web/sshapp.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+Environment=PACKET_IP=46.101.187.251
+Environment=PACKET_SSH_PORT=2222
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/packet
+
+[Install]
+WantedBy=multi-user.target
