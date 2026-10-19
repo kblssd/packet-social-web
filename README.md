@@ -1,15 +1,24 @@
 # packet.social
 
-A social network you have to learn networking to use.
+A social network you reach with a terminal, built for people learning networking.
 
-There is no app, no login button and no feed to scroll. You read and write to
-[packet.social](https://packet.social) from a terminal, one request at a time, with tools
-that are already on your computer: `curl` and `ssh-keygen` for posts, `nc` for likes. If you do not yet
-know what a port, a header or a status code is, you will by the time you make your first post.
+There is no app and no feed to scroll. You connect with one command, and every post you read,
+send or like crosses the same network you are trying to learn.
 
-The website is only a front door. It has three pages: **home** (how to connect), **man**
-(the full manual) and **get /feed** (a read only window onto the latest posts).
-Everything else happens in your terminal.
+```
+ssh -p 2222 packet.social
+```
+
+No install and no password. Your SSH key is your account. The first time, you pick a handle.
+After that the server recognises your key. [packet.social](https://packet.social) is only a front
+door: it shows whether the server is up, the live numbers and how to connect.
+
+Two ways in, same network:
+
+- **Easy mode:** the SSH app. A real terminal with a feed, posting, likes, profiles, a daily
+  challenge and a `netinfo` command that shows what the network sees about your own connection.
+- **Hard mode:** the raw tools (`curl`, `ssh-keygen`, `nc`). You build the requests by hand and
+  sign them yourself. Doing it earns the `hard_mode` badge. This is where the deep learning is.
 
 > The original browser simulator of this idea lives in
 > [kblssd/packet-social](https://github.com/kblssd/packet-social). This repo is the real thing.
@@ -18,8 +27,9 @@ Everything else happens in your terminal.
 
 ## Contents
 
-1. [What you need](#1-what-you-need)
-2. [Quick start](#2-quick-start)
+0. [Easy mode: the SSH app](#0-easy-mode-the-ssh-app)
+1. [What you need for hard mode](#1-what-you-need-for-hard-mode)
+2. [Hard mode quick start](#2-hard-mode-quick-start)
 3. [Step by step for a first timer](#3-step-by-step-for-a-first-timer)
 4. [Cheat sheet](#4-cheat-sheet)
 5. [Rules and limits](#5-rules-and-limits)
@@ -32,7 +42,51 @@ Everything else happens in your terminal.
 
 ---
 
-## 1. What you need
+## 0. Easy mode: the SSH app
+
+Open a terminal and run:
+
+```
+ssh -p 2222 packet.social
+```
+
+**No SSH key yet?** Make one once and press Enter at every question:
+
+```
+ssh-keygen -t ed25519
+```
+
+**Want a look first?** `ssh -p 2222 guest@packet.social` needs no key and is read only.
+
+The first time with a new key you pick a handle (lowercase letters, digits and underscore, up to
+20). Then you get a prompt and these commands:
+
+| Command | What it does |
+| ------- | ------------ |
+| `help` | List the commands. |
+| `feed [n]` | Newest posts, 10 by default, 30 at most. |
+| `read ID` | One post. |
+| `post [text]` | Write a post, 280 bytes at most. Without text it asks you. |
+| `like ID` | Like a post, once each. |
+| `profile [name]` | A person: joined date, posts, likes received, badges. |
+| `learn` | Today's challenge and the learning ladder. |
+| `netinfo` | Your address and port, the server's, the cipher and your key, as the server sees them. |
+| `status` | Users, posts and likes. |
+| `exit` | Disconnect. |
+
+You can also run one command and leave: `ssh -p 2222 packet.social feed 5`.
+
+Your private key is your password, and it never leaves your computer. Lose it and that handle is
+gone, so back up your `~/.ssh` folder. An account made in the SSH app also works in hard mode,
+with the same key, as long as it is an ed25519 key.
+
+Every day a bot called `@packet` posts a networking challenge. Answer it with `post`.
+
+**Badges:** `first_post`, `first_like`, and `hard_mode` for a post sent with a hand signed request.
+
+---
+
+## 1. What you need for hard mode
 
 **A terminal.** This is the text window where you type commands.
 
@@ -68,7 +122,7 @@ works unchanged. Git Bash also works for everything except likes, because it has
 
 ---
 
-## 2. Quick start
+## 2. Hard mode quick start
 
 There are no passwords. You make a **key pair**: a private key that stays on your computer, and a
 public key you give to the server. Every request you send is **signed** with the private key, and
@@ -161,8 +215,8 @@ Type your answer in the A= part of the first line. It is not case sensitive,
 so UDP and udp both work. Change H= to the handle you want ...
 ```
 
-You will be asked one simple networking question. Every answer is in the
-[manual](https://packet.social/#manual), on this page, or one command away. A search engine
+You will be asked one simple networking question. Every answer is on this page
+or one command away. A search engine
 is allowed. This is a lesson, not an exam.
 
 **2c. Register.** Pick a **handle** (lowercase letters, digits and underscore, up to 20
@@ -193,11 +247,11 @@ The question you are asked can be any one of these, so here is where to find eac
 | -------- | ------------- |
 | What is the IPv4 loopback address? | Run `ping localhost` and read the number in brackets. |
 | What is the IP address of packet.social? | Run `nslookup packet.social`. |
-| Which port does HTTPS use? / plain HTTP? / SSH? | The manual, or a web search for "default port HTTPS". |
+| Which port does HTTPS use? / plain HTTP? / SSH? | A web search for "default port HTTPS". |
 | What status code means Not Found / Unauthorized / Created? | The [status codes](#6-status-codes) table below. |
-| Do likes travel over tcp or udp? | The home page and the manual. |
-| Which port do likes use? | The home page and the manual. |
-| What is the maximum size of a post, in bytes? | The manual and [Rules and limits](#5-rules-and-limits). |
+| Do likes travel over tcp or udp? | This page, or the home page. |
+| Which port do likes use? | This page, or the home page. |
+| What is the maximum size of a post, in bytes? | [Rules and limits](#5-rules-and-limits). |
 | How many bits are in an IPv4 address? | A web search. |
 
 Answers are not case sensitive. A question stays valid for 10 to 20 minutes and is tied to your
@@ -293,9 +347,9 @@ Each address can like each post once.
 
 ### Step 6. Look at the website
 
-Open [packet.social](https://packet.social) in a browser. The status light at the top says `UP`
-when the server is running, and the **get /feed** page shows the same posts you read from the terminal.
-You cannot post, like or delete from the website. It is a window, not a door.
+Open [packet.social](https://packet.social) in a browser. It shows whether the server is up, the
+live numbers (users, posts, likes, uptime) and the latest posts. You cannot post, like or delete from
+the website. It is a front door, not the app.
 
 ---
 
@@ -490,11 +544,13 @@ This section is for people who want to host a copy. You do not need it to use pa
 
 | File | Purpose |
 | ---- | ------- |
-| `index.html` | The whole website: home, manual and feed, in one file. |
-| `server.py` | The server. Python standard library only, no packages to install. |
+| `index.html` | The landing page: status, live numbers and how to connect. One file. |
+| `server.py` | The HTTP and UDP server. Python standard library only. |
+| `sshapp.py` | The SSH app. Needs the `python3-asyncssh` package. Shares the database with `server.py`. |
 | `backup.py` | Nightly database backup. |
 | `deploy/Caddyfile` | Caddy config: sends API paths to the server, serves the website for the rest. |
-| `deploy/packet.service` | systemd unit that runs the server. |
+| `deploy/packet.service` | systemd unit that runs the HTTP and UDP server. |
+| `deploy/packet-ssh.service` | systemd unit that runs the SSH app. |
 | `deploy/packet-backup.service`, `deploy/packet-backup.timer` | Runs the backup every night at 03:30. |
 | `deploy/install.sh` | Installs and restarts everything. |
 
@@ -503,6 +559,7 @@ This section is for people who want to host a copy. You do not need it to use pa
 ```
 you ----https 443----> Caddy ----http 127.0.0.1:8080----> server.py ----> SQLite
 you ----udp   6969---------------------------------------> server.py
+you ----ssh   2222---------------------------------------> sshapp.py ----> SQLite
 ```
 
 - Caddy gets and renews the HTTPS certificate on its own and forwards the API paths
@@ -539,6 +596,9 @@ curl http://127.0.0.1:8080/register
 | `PACKET_HTTP_PORT` | `8080` | HTTP listen port. Must match `deploy/Caddyfile`. |
 | `PACKET_UDP_HOST` | `0.0.0.0` | UDP listen address. |
 | `PACKET_UDP_PORT` | `6969` | UDP port for likes. |
+| `PACKET_SSH_HOST` | `0.0.0.0` | SSH app listen address. |
+| `PACKET_SSH_PORT` | `2222` | SSH app port. Use 22 only after moving your own admin SSH elsewhere. |
+| `PACKET_SSH_HOST_KEY` | `/var/lib/packet/ssh_host_key` | The server's own SSH identity. Created on first start. Back it up, or users see a changed host key warning. |
 | `PACKET_IP` | `46.101.187.251` | The server's public IP, used for one registration question. Set it to yours in `deploy/packet.service`. |
 
 ### Deploy on a small VPS (Ubuntu 24.04)
@@ -551,6 +611,7 @@ curl http://127.0.0.1:8080/register
    ufw allow 80/tcp
    ufw allow 443/tcp
    ufw allow 6969/udp
+   ufw allow 2222/tcp
    ufw enable
    ```
 3. Install Caddy (see the official Caddy install page for Debian and Ubuntu), git and
@@ -561,7 +622,15 @@ curl http://127.0.0.1:8080/register
    git clone https://github.com/kblssd/packet-social-web.git /opt/packet-social-web
    bash /opt/packet-social-web/deploy/install.sh
    ```
-   The script ends by printing `active` three times and the `/status` reply.
+   The script installs `python3-asyncssh`, opens port 2222 if the `ufw` firewall is on, and ends by
+   printing `active` for each service and the `/status` reply. If your host has a separate cloud
+   firewall, allow TCP 2222 there too.
+
+**Moving the SSH app to port 22** (so users type `ssh packet.social` with no `-p`): first move your
+own admin SSH to another port, for example 2200. Edit `/etc/ssh/sshd_config` (`Port 2200`), run
+`systemctl restart ssh`, and from a second window confirm `ssh -p 2200 root@your-ip` works before
+closing anything. Allow 2200 in the firewalls. Then set `Environment=PACKET_SSH_PORT=22` in
+`deploy/packet-ssh.service` and redeploy. From then on you log in with `ssh -p 2200`.
 
 **Update after changing the code:**
 
@@ -572,7 +641,8 @@ cd /opt/packet-social-web && git pull && bash deploy/install.sh
 **Watch the logs:**
 
 ```
-journalctl -u packet -f
+journalctl -u packet -f        # HTTP and UDP server
+journalctl -u packet-ssh -f    # SSH app
 ```
 
 ### Backups and restore
@@ -594,7 +664,7 @@ systemctl start packet
 ### Changing the registration questions
 
 The questions are the `QUESTIONS` list near the top of `server.py`, each a pair of question and
-answer. Edit the list, keep every answer findable in the manual or one command away, then redeploy.
+answer. Edit the list, keep every answer findable in the README or one command away, then redeploy.
 
 ---
 
@@ -602,7 +672,9 @@ answer. Edit the list, keep every answer findable in the manual or one command a
 
 What is in place:
 
-- **Encryption.** All reading and writing goes over HTTPS. Caddy manages the certificate.
+- **Encryption.** All reading and writing goes over HTTPS or SSH. Caddy manages the web certificate.
+- **The SSH app is not a shell.** Connecting gives you the app's own prompt. There is no way to run
+  system commands, forward ports or transfer files through it. Guests need no key and are read only.
 - **No passwords.** The server stores only your public key. Every post and registration is signed
   with your private key, which never leaves your computer. Nothing secret is ever sent or stored.
 - **Replay protection.** A signed request is valid for 5 minutes and can be used once.
