@@ -173,6 +173,13 @@ p { margin: 0 0 8px; }
 .chip strong { font-size: clamp(16px, 2.2vw, 24px); font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 .chip.on strong { color: var(--cmd); }
 
+.term { display: flex; flex-direction: column; height: 100%; padding: 10px 14px; cursor: text; }
+.tout { flex: 1 1 auto; min-height: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
+.tout .c { color: var(--cmd); }
+.tout .m { color: var(--muted); }
+.tin { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; padding-top: 6px; color: var(--muted); }
+.tin input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--cmd); font: inherit; caret-color: var(--cmd); }
+
 /* ---------- narrow screens: plain stack, no dragging ---------- */
 .board.flow { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; height: auto !important; }
 .board.flow .tile { position: static; width: auto !important; height: auto !important; grid-column: 1 / -1; transition: none; }
@@ -181,6 +188,8 @@ p { margin: 0 0 8px; }
 .board.flow .bar { cursor: default; }
 .board.flow .body { overflow: visible; }
 .board.flow .head, .board.flow .chip { height: auto; padding-top: 14px; }
+.board.flow .term { height: auto; }
+.board.flow .tout { max-height: 260px; }
 
 @media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
 </style>
@@ -208,6 +217,10 @@ p { margin: 0 0 8px; }
       '<button type="button" data-pal="mixed">mixed</button>' +
       '<span class="sep">|</span>' +
       '<button type="button" data-act="reset">reset layout</button></div></div>', bare: true },
+
+    term: { title: "terminal (read only)", html:
+      '<div class="term"><div class="tout" id="t-out" role="log" aria-live="polite"></div>' +
+      '<label class="tin"><span>$</span><input id="t-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Terminal input"></label></div>', bare: true },
 
     feed: { title: "get /feed", html:
       '<p class="note" id="feed-note" style="white-space:normal">Sample posts, loading the live feed.</p><div id="feed"></div>' },
@@ -293,22 +306,23 @@ p { margin: 0 0 8px; }
 
   var DEFAULT = [
     { id: "head",     x: 0, y: 0,  w: 10, h: 3 },
-    { id: "feed",     x: 0, y: 3,  w: 5,  h: 14 },
-    { id: "start",    x: 5, y: 3,  w: 5,  h: 8 },
-    { id: "use",      x: 5, y: 11, w: 5,  h: 6 },
-    { id: "activity", x: 0, y: 17, w: 5,  h: 5 },
-    { id: "liked",    x: 5, y: 17, w: 5,  h: 5 },
-    { id: "top",      x: 0, y: 22, w: 3,  h: 7 },
-    { id: "rules",    x: 3, y: 22, w: 4,  h: 7 },
-    { id: "learn",    x: 7, y: 22, w: 3,  h: 7 },
-    { id: "c1",       x: 0, y: 29, w: 2,  h: 2 },
-    { id: "c2",       x: 2, y: 29, w: 2,  h: 2 },
-    { id: "c3",       x: 4, y: 29, w: 2,  h: 2 },
-    { id: "c4",       x: 6, y: 29, w: 2,  h: 2 },
-    { id: "c5",       x: 8, y: 29, w: 2,  h: 2 }
+    { id: "term",     x: 0, y: 3,  w: 6,  h: 8 },
+    { id: "start",    x: 0, y: 11, w: 6,  h: 8 },
+    { id: "use",      x: 0, y: 19, w: 6,  h: 7 },
+    { id: "activity", x: 0, y: 26, w: 3,  h: 5 },
+    { id: "liked",    x: 3, y: 26, w: 3,  h: 5 },
+    { id: "top",      x: 0, y: 31, w: 3,  h: 9 },
+    { id: "rules",    x: 3, y: 31, w: 3,  h: 9 },
+    { id: "learn",    x: 0, y: 40, w: 6,  h: 5 },
+    { id: "feed",     x: 6, y: 3,  w: 4,  h: 42 },
+    { id: "c1",       x: 0, y: 45, w: 2,  h: 2 },
+    { id: "c2",       x: 2, y: 45, w: 2,  h: 2 },
+    { id: "c3",       x: 4, y: 45, w: 2,  h: 2 },
+    { id: "c4",       x: 6, y: 45, w: 2,  h: 2 },
+    { id: "c5",       x: 8, y: 45, w: 2,  h: 2 }
   ];
 
-  var MIN = { head: [4, 2], c1: [1, 2], c2: [1, 2], c3: [1, 2], c4: [1, 2], c5: [1, 2] };
+  var MIN = { head: [4, 2], term: [3, 4], c1: [1, 2], c2: [1, 2], c3: [1, 2], c4: [1, 2], c5: [1, 2] };
 
   var board = document.getElementById("board");
   var items = [];
@@ -323,7 +337,7 @@ p { margin: 0 0 8px; }
   function clone(a) { return a.map(function (i) { return { id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }; }); }
 
   function restore() {
-    var raw = load("packet-board-v3"), saved = null;
+    var raw = load("packet-board-v4"), saved = null;
     if (raw) { try { saved = JSON.parse(raw); } catch (e) { saved = null; } }
     var ok = saved && saved.length === DEFAULT.length && saved.every(function (s) { return TILES[s.id] && isFinite(s.x + s.y + s.w + s.h); });
     items = clone(ok ? saved : DEFAULT);
@@ -395,7 +409,7 @@ p { margin: 0 0 8px; }
       b.addEventListener("click", function () { setPal(b.getAttribute("data-pal")); });
     });
     var rb = document.querySelector("[data-act=reset]");
-    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v3", JSON.stringify(items)); layout(); });
+    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v4", JSON.stringify(items)); layout(); });
     markPal();
   }
 
@@ -448,7 +462,7 @@ p { margin: 0 0 8px; }
         compact(null);
         place(el, it);
         layout();
-        save("packet-board-v3", JSON.stringify(items));
+        save("packet-board-v4", JSON.stringify(items));
       }
       bar.addEventListener("pointermove", move);
       bar.addEventListener("pointerup", up);
@@ -474,7 +488,7 @@ p { margin: 0 0 8px; }
         el.classList.remove("live");
         compact(null);
         layout();
-        save("packet-board-v3", JSON.stringify(items));
+        save("packet-board-v4", JSON.stringify(items));
       }
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
@@ -497,7 +511,7 @@ p { margin: 0 0 8px; }
         it.y = Math.max(0, it.y + d[1]);
       }
       settle(it); layout();
-      save("packet-board-v3", JSON.stringify(items));
+      save("packet-board-v4", JSON.stringify(items));
     });
   }
 
@@ -615,6 +629,65 @@ p { margin: 0 0 8px; }
     setChip("g-newest", newest ? "#" + newest : "none");
   }
 
+  function initTerm() {
+    var out = document.getElementById("t-out"), inp = document.getElementById("t-in");
+    if (!out || !inp) return;
+    var hist = [], hi = 0;
+    function line(text, cls) { out.appendChild(el2("div", cls || "", text)); out.scrollTop = out.scrollHeight; }
+    function get(path) {
+      if (!window.fetch || location.protocol === "file:") { line("Preview mode: no live server here.", "m"); return; }
+      fetch(path, { cache: "no-store" })
+        .then(function (r) { return r.text().then(function (t) { return { s: r.status, t: t }; }); })
+        .then(function (x) { line(x.t.replace(/\s+$/, "") || "(empty)"); if (x.s >= 400) line("HTTP " + x.s, "m"); })
+        .catch(function () { line("Could not reach the server.", "m"); });
+    }
+    var HELP = [
+      "status          is the server alive",
+      "feed            the newest posts",
+      "read ID         one post, e.g. read 3",
+      "profile NAME    one person, e.g. profile ada",
+      "like ID         shows the command to like a post",
+      "post            shows how to post",
+      "register        shows how to join",
+      "clear           empty this window"
+    ];
+    function run(raw) {
+      var a = raw.trim().split(/\s+/), c = (a[0] || "").toLowerCase(), arg = a[1] || "";
+      line("$ " + raw, "c");
+      if (!c) return;
+      if (c === "help") { HELP.forEach(function (h) { line(h); }); }
+      else if (c === "clear") { out.textContent = ""; }
+      else if (c === "status") { get("/status"); }
+      else if (c === "feed") { get("/feed"); }
+      else if (c === "read") {
+        if (/^[0-9]{1,9}$/.test(arg)) get("/post/" + arg); else line("Usage: read 3", "m");
+      }
+      else if (c === "profile") {
+        if (/^[a-z0-9_]{1,20}$/.test(arg.toLowerCase())) get("/profile/" + arg.toLowerCase()); else line("Usage: profile ada", "m");
+      }
+      else if (c === "like") {
+        if (/^[0-9]{1,9}$/.test(arg)) { line("Run this in your own terminal:", "m"); line("echo -n 'LIKE:" + arg + "' | nc -u -w1 packet.social 6969"); }
+        else line("Usage: like 3", "m");
+      }
+      else if (c === "post") { line("Posting needs your private key, so it only works in your own terminal. See the use it tile.", "m"); }
+      else if (c === "register") { line("Run this in your own terminal:", "m"); line("curl https://packet.social/register"); }
+      else { line("command not found: " + c + ". Type help.", "m"); }
+    }
+    line("packet.social read only terminal. Type help.", "m");
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        var v = inp.value; inp.value = "";
+        if (v.trim()) { hist.push(v); hi = hist.length; }
+        run(v);
+      } else if (e.key === "ArrowUp") {
+        if (hi > 0) { hi--; inp.value = hist[hi]; } e.preventDefault();
+      } else if (e.key === "ArrowDown") {
+        if (hi < hist.length - 1) { hi++; inp.value = hist[hi]; } else { hi = hist.length; inp.value = ""; } e.preventDefault();
+      }
+    });
+    out.parentNode.addEventListener("click", function () { if (!window.getSelection || !String(window.getSelection())) inp.focus(); });
+  }
+
   function setChip(id, text, on) {
     var n = document.getElementById(id);
     if (!n) return;
@@ -638,6 +711,7 @@ p { margin: 0 0 8px; }
 
   restore();
   build();
+  initTerm();
   layout();
   loadLive();
   window.addEventListener("resize", function () { layout(); });
