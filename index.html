@@ -148,13 +148,26 @@ p { margin: 0 0 8px; }
 .limits dt { color: var(--muted); }
 .limits dd { margin: 0; }
 
-.layers { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 460px; }
+.layers { width: 100%; border-collapse: collapse; font-size: 12px; }
 .layers td { padding: 5px 12px 5px 0; vertical-align: top; border-bottom: 1px solid var(--tile-line); }
 :root[data-pal="sketch"] .layers td { border-bottom-color: #E6E4DE; }
-.layers td:first-child { color: var(--muted); width: 3.5ch; }
-.layers td:nth-child(2) { white-space: nowrap; }
+.layers td:first-child { white-space: nowrap; }
 .layers td:last-child { color: var(--muted); }
-.scroll { overflow-x: auto; scrollbar-width: thin; }
+.bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; }
+.bars .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
+.bars .col .n { font-size: 11px; font-variant-numeric: tabular-nums; }
+.bars .col .b { width: 100%; background: var(--orange); border-radius: 4px 4px 0 0; min-height: 2px; }
+:root[data-pal="sketch"] .bars .col .b, :root[data-pal="mixed"] .bars .col .b { background: var(--orange-ink); }
+.bars .col .l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rank { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 0 0 8px; }
+.rank .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .c { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rank .bar2 { grid-column: 1 / -1; height: 4px; background: var(--tile-line); border-radius: 2px; overflow: hidden; }
+.rank .bar2 i { display: block; height: 100%; background: var(--orange); }
+:root[data-pal="sketch"] .rank .bar2 { background: #E6E4DE; }
+:root[data-pal="sketch"] .rank .bar2 i, :root[data-pal="mixed"] .rank .bar2 i { background: var(--orange-ink); }
+.big { font-size: clamp(28px, 4vw, 44px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+.big small { font-size: 11px; font-weight: 400; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
 .chip { display: flex; flex-direction: column; justify-content: center; height: 100%; padding: 0 14px 6px; }
 .chip small { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
 .chip strong { font-size: clamp(16px, 2.2vw, 24px); font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
@@ -196,7 +209,10 @@ p { margin: 0 0 8px; }
       '<span class="sep">|</span>' +
       '<button type="button" data-act="reset">reset layout</button></div></div>', bare: true },
 
-    connect: { title: "connect", html:
+    feed: { title: "get /feed", html:
+      '<p class="note" id="feed-note" style="white-space:normal">Sample posts, loading the live feed.</p><div id="feed"></div>' },
+
+    start: { title: "get started", html:
       '<p>No passwords. You make a key pair and sign each request. Every command is one line: copy all of it, including the web address.</p><div class="code">' +
       '<span class="note"># 1. is the server alive?</span>' +
       '<span class="cmd">curl https://packet.social/status</span>' +
@@ -204,93 +220,92 @@ p { margin: 0 0 8px; }
       '<span class="note"># 2. make your key pair, once</span>' +
       '<span class="cmd">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>' +
       '<span class="gap"></span>' +
-      '<span class="note"># 3. ask for the registration question. It prints the commands to answer it.</span>' +
+      '<span class="note"># 3. get the question. The reply prints these commands for you.</span>' +
       '<span class="cmd">curl https://packet.social/register</span>' +
       '<span class="gap"></span>' +
-      '<span class="note"># 4. read the feed</span>' +
-      '<span class="cmd">curl https://packet.social/feed</span></div>' },
-
-    feed: { title: "get /feed", html:
-      '<p class="note" id="feed-note" style="white-space:normal">Sample posts, loading the live feed.</p><div id="feed"></div>' },
-
-    register: { title: "register", html:
-      '<p>Answer the question from step 3. Change H= (your handle) and A= (your answer), then copy all three lines. Answers are not case sensitive.</p><div class="code">' +
+      '<span class="note"># 4. register: change H= (handle) and A= (answer, any case), copy all three lines</span>' +
       '<span class="cmd">H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)</span>' +
       '<span class="cmd">S=$(printf \'%s\' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
       '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>' +
       '<span class="rep">201 Created, then a welcome message</span></div>' +
       '<p class="note" style="white-space:normal;margin-top:8px">Handles are lowercase letters, digits and underscore, up to 20. There is no key recovery, so back up ~/.ssh/packet_social.</p>' },
 
-    post: { title: "post", html:
-      '<p>Change H= (your handle) and B= (your words), then copy all three lines. Posts are 280 bytes at most.</p><div class="code">' +
+    use: { title: "use it", html:
+      '<div class="code">' +
+      '<span class="note"># post: change H= and B=, copy all three lines (280 bytes at most)</span>' +
       '<span class="cmd">H=yourhandle; B=\'hello from the wire\'; T=$(date +%s)</span>' +
       '<span class="cmd">S=$(printf \'%s\' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
       '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>' +
-      '<span class="rep">201 Created</span></div>' +
+      '<span class="gap"></span>' +
+      '<span class="note"># like post 3: one UDP packet, nothing comes back</span>' +
+      '<span class="cmd">echo -n \'LIKE:3\' | nc -u -w1 packet.social 6969</span>' +
+      '<span class="gap"></span>' +
+      '<span class="note"># read</span>' +
+      '<span class="cmd">curl https://packet.social/feed</span>' +
+      '<span class="cmd">curl https://packet.social/post/3</span>' +
+      '<span class="cmd">curl https://packet.social/profile/ada</span></div>' +
       '<p class="note" style="white-space:normal;margin-top:8px">The signature covers your handle, the time and your exact words, and each signed request works once.</p>' },
 
-    like: { title: "like", html:
-      '<p>A like is one UDP packet to port 6969. Nothing comes back, and that is normal.</p><div class="code">' +
-      '<span class="cmd">echo -n \'LIKE:3\' | nc -u -w1 packet.social 6969</span></div>' +
-      '<p class="note" style="white-space:normal;margin-top:8px">Read the post again to see if it arrived. One like per post per address.</p>' },
+    activity: { title: "posts per day", html:
+      '<div class="bars" id="d-activity"></div><p class="note" id="d-activity-note" style="white-space:normal;margin:8px 0 0"></p>' },
 
-    codes: { title: "status codes", html:
-      '<dl class="limits">' +
-      '<dt>200</dt><dd>request worked</dd>' +
-      '<dt>201</dt><dd>post or account exists</dd>' +
-      '<dt>400</dt><dd>something malformed</dd>' +
-      '<dt>401</dt><dd>missing or bad signature</dd>' +
-      '<dt>403</dt><dd>wrong registration answer</dd>' +
-      '<dt>404</dt><dd>no such post or profile</dd>' +
-      '<dt>405</dt><dd>nothing is ever deleted</dd>' +
-      '<dt>409</dt><dd>handle is taken</dd>' +
-      '<dt>413</dt><dd>over 280 bytes</dd>' +
-      '<dt>429</dt><dd>slow down, then retry</dd></dl>' },
+    liked: { title: "most liked", html: '<div id="d-liked"></div>' },
 
-    limits: { title: "limits", html:
+    top: { title: "top posters", html: '<div id="d-top"></div><p class="note" style="white-space:normal;margin:8px 0 0">From the newest 50 posts.</p>' },
+
+    rules: { title: "rules", html:
       '<dl class="limits">' +
       '<dt>post size</dt><dd>280 bytes</dd>' +
-      '<dt>requests</dt><dd>60 per minute per address</dd>' +
-      '<dt>posts</dt><dd>20 per 10 minutes per handle</dd>' +
-      '<dt>registering</dt><dd>5 attempts per hour</dd>' +
+      '<dt>requests</dt><dd>60 a minute</dd>' +
+      '<dt>posts</dt><dd>20 per 10 minutes</dd>' +
+      '<dt>registering</dt><dd>5 tries an hour</dd>' +
       '<dt>likes</dt><dd>1 per post per address</dd>' +
-      '<dt>signed request</dt><dd>valid for 5 minutes</dd>' +
-      '<dt>feed</dt><dd>newest 50 posts</dd></dl>' +
-      '<p class="note" style="white-space:normal;margin-top:8px">Over a limit you get a 429 and a Retry-After header.</p>' },
+      '<dt>signature</dt><dd>valid 5 minutes</dd></dl>' +
+      '<div class="gap"></div>' +
+      '<dl class="limits">' +
+      '<dt>200 201</dt><dd>worked, created</dd>' +
+      '<dt>400</dt><dd>malformed</dd>' +
+      '<dt>401</dt><dd>bad signature</dd>' +
+      '<dt>403</dt><dd>wrong answer</dd>' +
+      '<dt>404</dt><dd>not found</dd>' +
+      '<dt>405</dt><dd>nothing is deleted</dd>' +
+      '<dt>409</dt><dd>handle taken</dd>' +
+      '<dt>413</dt><dd>over 280 bytes</dd>' +
+      '<dt>429</dt><dd>slow down</dd></dl>' },
 
     learn: { title: "what you will learn", html:
-      '<div class="scroll"><table class="layers"><tbody>' +
-      '<tr><td>L7</td><td>application</td><td>Methods, headers, status codes, signed requests, reading a 401.</td></tr>' +
-      '<tr><td>L6</td><td>presentation</td><td>TLS, base64, hex, bytes versus characters.</td></tr>' +
-      '<tr><td>L5</td><td>session</td><td>Keeping a connection open, and what closing it costs you.</td></tr>' +
-      '<tr><td>L4</td><td>transport</td><td>TCP for posts, UDP for likes, and why they behave differently.</td></tr>' +
-      '<tr><td>L3</td><td>network</td><td>Your address, subnets, routes, and what the server sees of you.</td></tr>' +
-      '<tr><td>L2</td><td>data link</td><td>MAC addresses and your local network.</td></tr>' +
-      '<tr><td>L1</td><td>physical</td><td>Your cable, or your radio. Not our problem.</td></tr>' +
-      '</tbody></table></div>' },
+      '<table class="layers"><tbody>' +
+      '<tr><td>L7 application</td><td>methods, headers, status codes, signed requests</td></tr>' +
+      '<tr><td>L6 presentation</td><td>TLS, base64, hex, bytes versus characters</td></tr>' +
+      '<tr><td>L5 session</td><td>keeping a connection open</td></tr>' +
+      '<tr><td>L4 transport</td><td>TCP for posts, UDP for likes</td></tr>' +
+      '<tr><td>L3 network</td><td>addresses, subnets, routes</td></tr>' +
+      '<tr><td>L2 data link</td><td>MAC addresses, your local network</td></tr>' +
+      '<tr><td>L1 physical</td><td>your cable or radio, not our problem</td></tr>' +
+      '</tbody></table>' },
 
     c1: { title: "users", chip: ["users", "..."], id: "g-users" },
     c2: { title: "posts", chip: ["posts", "..."], id: "g-posts" },
-    c3: { title: "https", chip: ["https", "443/tcp"] },
-    c4: { title: "likes", chip: ["likes", "6969/udp"] },
+    c3: { title: "likes", chip: ["likes", "..."], id: "g-likes" },
+    c4: { title: "newest post", chip: ["newest", "..."], id: "g-newest" },
     c5: { title: "server", chip: ["server", "..."], id: "g-state" }
   };
 
   var DEFAULT = [
     { id: "head",     x: 0, y: 0,  w: 10, h: 3 },
-    { id: "connect",  x: 0, y: 3,  w: 5,  h: 6 },
-    { id: "feed",     x: 5, y: 3,  w: 5,  h: 6 },
-    { id: "register", x: 0, y: 9,  w: 5,  h: 5 },
-    { id: "post",     x: 5, y: 9,  w: 5,  h: 5 },
-    { id: "like",     x: 0, y: 14, w: 5,  h: 4 },
-    { id: "limits",   x: 5, y: 14, w: 5,  h: 5 },
-    { id: "codes",    x: 0, y: 18, w: 5,  h: 6 },
-    { id: "learn",    x: 5, y: 19, w: 5,  h: 6 },
-    { id: "c1",       x: 0, y: 25, w: 2,  h: 2 },
-    { id: "c2",       x: 2, y: 25, w: 2,  h: 2 },
-    { id: "c3",       x: 4, y: 25, w: 2,  h: 2 },
-    { id: "c4",       x: 6, y: 25, w: 2,  h: 2 },
-    { id: "c5",       x: 8, y: 25, w: 2,  h: 2 }
+    { id: "feed",     x: 0, y: 3,  w: 5,  h: 14 },
+    { id: "start",    x: 5, y: 3,  w: 5,  h: 8 },
+    { id: "use",      x: 5, y: 11, w: 5,  h: 6 },
+    { id: "activity", x: 0, y: 17, w: 5,  h: 5 },
+    { id: "liked",    x: 5, y: 17, w: 5,  h: 5 },
+    { id: "top",      x: 0, y: 22, w: 3,  h: 7 },
+    { id: "rules",    x: 3, y: 22, w: 4,  h: 7 },
+    { id: "learn",    x: 7, y: 22, w: 3,  h: 7 },
+    { id: "c1",       x: 0, y: 29, w: 2,  h: 2 },
+    { id: "c2",       x: 2, y: 29, w: 2,  h: 2 },
+    { id: "c3",       x: 4, y: 29, w: 2,  h: 2 },
+    { id: "c4",       x: 6, y: 29, w: 2,  h: 2 },
+    { id: "c5",       x: 8, y: 29, w: 2,  h: 2 }
   ];
 
   var MIN = { head: [4, 2], c1: [1, 2], c2: [1, 2], c3: [1, 2], c4: [1, 2], c5: [1, 2] };
@@ -308,7 +323,7 @@ p { margin: 0 0 8px; }
   function clone(a) { return a.map(function (i) { return { id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }; }); }
 
   function restore() {
-    var raw = load("packet-board-v2"), saved = null;
+    var raw = load("packet-board-v3"), saved = null;
     if (raw) { try { saved = JSON.parse(raw); } catch (e) { saved = null; } }
     var ok = saved && saved.length === DEFAULT.length && saved.every(function (s) { return TILES[s.id] && isFinite(s.x + s.y + s.w + s.h); });
     items = clone(ok ? saved : DEFAULT);
@@ -380,7 +395,7 @@ p { margin: 0 0 8px; }
       b.addEventListener("click", function () { setPal(b.getAttribute("data-pal")); });
     });
     var rb = document.querySelector("[data-act=reset]");
-    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v2", JSON.stringify(items)); layout(); });
+    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v3", JSON.stringify(items)); layout(); });
     markPal();
   }
 
@@ -433,7 +448,7 @@ p { margin: 0 0 8px; }
         compact(null);
         place(el, it);
         layout();
-        save("packet-board-v2", JSON.stringify(items));
+        save("packet-board-v3", JSON.stringify(items));
       }
       bar.addEventListener("pointermove", move);
       bar.addEventListener("pointerup", up);
@@ -459,7 +474,7 @@ p { margin: 0 0 8px; }
         el.classList.remove("live");
         compact(null);
         layout();
-        save("packet-board-v2", JSON.stringify(items));
+        save("packet-board-v3", JSON.stringify(items));
       }
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
@@ -482,7 +497,7 @@ p { margin: 0 0 8px; }
         it.y = Math.max(0, it.y + d[1]);
       }
       settle(it); layout();
-      save("packet-board-v2", JSON.stringify(items));
+      save("packet-board-v3", JSON.stringify(items));
     });
   }
 
@@ -534,6 +549,72 @@ p { margin: 0 0 8px; }
     });
   }
 
+  function el2(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+
+  function renderStats(list) {
+    var now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+    var days = [0, 0, 0, 0, 0, 0, 0], total = 0, likes = 0, newest = 0, counts = {}, best = null;
+    list.forEach(function (p) {
+      likes += p.likes; if (p.id > newest) newest = p.id;
+      counts[p.who] = (counts[p.who] || 0) + 1;
+      if (!best || p.likes > best.likes || (p.likes === best.likes && p.id > best.id)) best = p;
+      if (isFinite(p.t)) {
+        var ago = p.t >= start ? 0 : Math.ceil((start - p.t) / 86400);
+        if (ago <= 6) { days[6 - ago]++; total++; }
+      }
+    });
+
+    var act = document.getElementById("d-activity");
+    if (act) {
+      act.textContent = "";
+      var max = Math.max.apply(null, days.concat([1])), letters = "SMTWTFS";
+      days.forEach(function (n, i) {
+        var col = el2("div", "col");
+        col.appendChild(el2("span", "n", String(n)));
+        var b = el2("div", "b"); b.style.height = Math.round(n / max * 80) + "px";
+        col.appendChild(b);
+        var d = new Date((start - (6 - i) * 86400) * 1000);
+        col.appendChild(el2("span", "l", letters.charAt(d.getDay())));
+        act.appendChild(col);
+      });
+      document.getElementById("d-activity-note").textContent = total + (total === 1 ? " post" : " posts") + " in the last 7 days, counted from the newest 50.";
+    }
+
+    var lk = document.getElementById("d-liked");
+    if (lk) {
+      lk.textContent = "";
+      if (best && best.likes > 0) {
+        var big = el2("div", "big", String(best.likes)); big.appendChild(el2("small", "", "likes"));
+        lk.appendChild(big);
+        var post = el2("div", "post");
+        var m = el2("div", "m"); m.appendChild(el2("b", "", "@" + best.who)); m.appendChild(document.createTextNode(" #" + best.id));
+        post.appendChild(m); post.appendChild(el2("div", "t", best.text));
+        lk.appendChild(post);
+      } else {
+        lk.appendChild(el2("p", "note", "No likes yet. Send the first one:"));
+        lk.lastChild.style.whiteSpace = "normal";
+        lk.appendChild(el2("span", "cmd", "echo -n 'LIKE:1' | nc -u -w1 packet.social 6969"));
+      }
+    }
+
+    var tp = document.getElementById("d-top");
+    if (tp) {
+      tp.textContent = "";
+      var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || (a < b ? -1 : 1); }).slice(0, 5);
+      if (!names.length) tp.appendChild(el2("p", "note", "Nobody has posted yet."));
+      names.forEach(function (n) {
+        var row = el2("div", "rank");
+        row.appendChild(el2("span", "who", "@" + n)); row.appendChild(el2("span", "c", String(counts[n])));
+        var bar = el2("div", "bar2"), fill = document.createElement("i");
+        fill.style.width = Math.round(counts[n] / counts[names[0]] * 100) + "%";
+        bar.appendChild(fill); row.appendChild(bar); tp.appendChild(row);
+      });
+    }
+
+    setChip("g-likes", String(likes));
+    setChip("g-newest", newest ? "#" + newest : "none");
+  }
+
   function setChip(id, text, on) {
     var n = document.getElementById(id);
     if (!n) return;
@@ -542,15 +623,16 @@ p { margin: 0 0 8px; }
   }
 
   function loadLive() {
-    if (!window.fetch || location.protocol === "file:") { renderFeed(SAMPLE, false); setChip("g-state", "PREVIEW"); return; }
+    if (!window.fetch || location.protocol === "file:") { renderFeed(SAMPLE, false); renderStats(SAMPLE); setChip("g-state", "PREVIEW"); return; }
     renderFeed(SAMPLE, false);
+    renderStats(SAMPLE);
     fetch("/status.json", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (s) { setChip("g-users", String(s.users)); setChip("g-posts", String(s.posts)); setChip("g-state", "UP", true); })
       .catch(function () { setChip("g-state", "DOWN"); });
     fetch("/feed.json", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (list) { renderFeed(list, true); layout(); })
+      .then(function (list) { renderFeed(list, true); renderStats(list); layout(); })
       .catch(function () { /* keep the sample */ });
   }
 
