@@ -2,647 +2,565 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>packet.social</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;800&family=Newsreader:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
 <style>
-/* Palette: black ground, white text, hot pink for what you send, orange for what the server sends. One look, no light mode.
-   Layout: one console column under a sticky status rail. Three views (home, manual, feed)
-   switched by the URL hash. Color means direction: pink is what you send, orange is what
-   the server sends. Serif is reserved for human posts. */
-
+/* packet.social. Layout: one orange frame holding a bento board of tiles. Every tile drags by its title bar and resizes by the corner.
+   Tiles snap to a 10 column grid, push neighbours down, then close gaps upward.
+   Palettes: black (dark tiles), sketch (orange board, white tiles), mixed (black board, white tiles).
+   Color: black, white, one orange. Type: JetBrains Mono for everything, Newsreader for posts written by people. */
 :root {
-  --ground:  #000000;
-  --panel:   #120A0F;
-  --panel-2: #0B0609;
-  --rule:    #A31B68;
-  --rule-2:  #3B1730;
-  --text:    #FFFFFF;
-  --muted:   #C4C4C4;
-  --dim:     #8F8F8F;
-  --tx:      #F72798;
-  --rx:      #F57D1F;
-  --ok:      #4DF59A;
-  --err:     #FF5252;
-  --sel:     #7A1450;
+  --orange: #F28C00;
+  --orange-ink: #A85F00;
+  --board: #000000;
+  --frame: #F28C00;
+  --tile: #0D0D0D;
+  --tile-line: #2A2A2A;
+  --bar: #161616;
+  --ink: #FFFFFF;
+  --muted: #A9A9A9;
+  --cmd: #F28C00;
+  --reply: #FFFFFF;
+  --chip: #F28C00;
+  --on-orange: #000000;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --serif: "Newsreader", Georgia, "Iowan Old Style", serif;
   color-scheme: dark;
-
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --human: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
+}
+:root[data-pal="sketch"] {
+  --board: #F28C00; --frame: #F28C00; --tile: #FFFFFF; --tile-line: #FFFFFF; --bar: #F4F4F2;
+  --ink: #0A0A0A; --muted: #55524C; --cmd: #A85F00; --reply: #0A0A0A; --chip: #0A0A0A; --on-orange: #FFFFFF;
+  color-scheme: light;
+}
+:root[data-pal="mixed"] {
+  --board: #000000; --frame: #F28C00; --tile: #FFFFFF; --tile-line: #FFFFFF; --bar: #F28C00;
+  --ink: #0A0A0A; --muted: #55524C; --cmd: #A85F00; --reply: #0A0A0A; --chip: #F28C00; --on-orange: #000000;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
-
+html, body { margin: 0; }
 body {
-  margin: 0;
-  background: var(--ground);
-  color: var(--text);
+  background: var(--board);
+  color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+  line-height: 1.6;
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  transition: background .25s;
 }
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0 0 auto;
-  height: env(safe-area-inset-top, 0px);
-  background: var(--panel);
-  z-index: 40;
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--board); }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+:root[data-pal="black"] :focus-visible, :root:not([data-pal]) :focus-visible { outline-color: var(--orange); }
+
+.frame {
+  max-width: 1180px;
+  margin: 0 auto;
+  background: var(--frame);
+  border-radius: 28px;
+  padding: 10px;
+  transition: background .25s;
 }
+.board { position: relative; width: 100%; }
 
-::selection { background: var(--sel); }
-:focus-visible { outline: 2px solid var(--tx); outline-offset: 2px; }
-a { color: var(--rx); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-/* ---------- status rail ---------- */
-
-.rail {
-  position: sticky;
-  top: env(safe-area-inset-top, 0px);
-  z-index: 30;
-  display: flex;
-  align-items: stretch;
-  background: var(--panel);
-  border-bottom: 1px solid var(--rule);
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
-}
-.rail::-webkit-scrollbar { display: none; }
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: 0 var(--s4);
-  border-right: 1px solid var(--rule);
-  flex: 0 0 auto;
-}
-.brand b { font-size: 15px; letter-spacing: .34em; margin-right: -.34em; }
-.brand span {
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  border: 1px solid var(--rule);
-  padding: 1px 5px;
-  white-space: nowrap;
-}
-
-.gauge {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: var(--s2) var(--s4);
-  border-right: 1px solid var(--rule-2);
-  min-width: 92px;
+/* ---------- tiles ---------- */
+.tile {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  background: var(--tile);
+  color: var(--ink);
+  border: 1px solid var(--tile-line);
+  border-radius: 16px;
+  overflow: hidden;
+  min-width: 0;
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, background .25s, border-color .25s;
 }
-.gauge dt { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
-.gauge dd { margin: 0; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.gauge dd.on   { color: var(--ok); }
-.gauge dd.warn { color: var(--tx); }
-.gauge dd.off  { color: var(--muted); }
-
-.nav {
-  margin-left: auto;
-  display: flex;
-  align-items: stretch;
+.tile.live { transition: background .25s, border-color .25s; z-index: 5; box-shadow: 0 14px 34px rgba(0,0,0,.45); }
+.tile.live .bar { cursor: grabbing; }
+.bar {
   flex: 0 0 auto;
-  border-left: 1px solid var(--rule-2);
-}
-.nav a {
   display: flex;
   align-items: center;
-  padding: 0 var(--s4);
-  color: var(--muted);
-  white-space: nowrap;
-  border-left: 1px solid var(--rule-2);
-}
-.nav a::before { content: "$ "; color: var(--dim); white-space: pre; }
-.nav a:hover { color: var(--text); text-decoration: none; }
-.nav a[aria-current="page"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
-
-/* ---------- page ---------- */
-
-.page {
-  max-width: 86ch;
-  margin: 0 auto;
-  padding-block: var(--s5) var(--s6);
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-.view[hidden] { display: none; }
-
-.line { margin: 0; white-space: pre-wrap; word-break: break-word; }
-.sys { color: var(--muted); }
-.ok  { color: var(--ok); }
-.err { color: var(--err); }
-.tx  { color: var(--tx); }
-.rx  { color: var(--rx); }
-
-.boot { margin: 0 0 var(--s5); }
-
-.code { color: var(--err); letter-spacing: .18em; font-size: 11px; margin: 0; }
-
-h1 {
-  font-size: clamp(20px, 4.2vw, 28px);
-  font-weight: 500;
-  letter-spacing: -.015em;
-  line-height: 1.25;
-  margin: var(--s3) 0 var(--s4);
-  text-wrap: balance;
-}
-h2 {
-  font-size: 9px;
-  letter-spacing: .2em;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bar);
+  font-size: 10px;
+  letter-spacing: .16em;
   text-transform: uppercase;
-  font-weight: 400;
-  color: var(--dim);
-  margin: var(--s6) 0 var(--s3);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  border-bottom: 1px solid var(--tile-line);
 }
-.lede { max-width: 62ch; margin: 0 0 var(--s3); color: var(--text); }
-.note { max-width: 62ch; margin: var(--s3) 0 0; color: var(--muted); font-size: 12px; }
-
-/* terminal blocks */
-
-.term {
-  margin: var(--s3) 0;
-  padding: var(--s3) var(--s4);
-  background: var(--panel-2);
-  border-left: 2px solid var(--rule);
-  overflow-x: auto;
-  scrollbar-width: thin;
+:root[data-pal="sketch"] .bar { border-bottom-color: #E6E4DE; }
+.bar b { color: var(--ink); font-weight: 500; }
+.bar .dots { margin-left: auto; letter-spacing: -2px; color: var(--orange); font-size: 14px; line-height: 1; }
+:root[data-pal="sketch"] .bar .dots, :root[data-pal="mixed"] .bar .dots { color: var(--orange-ink); }
+:root[data-pal="mixed"] .bar { color: #000; }
+:root[data-pal="mixed"] .bar b { color: #000; }
+:root[data-pal="mixed"] .bar .dots { color: #000; }
+.body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 14px; scrollbar-width: thin; }
+.grip {
+  position: absolute; right: 0; bottom: 0; width: 26px; height: 26px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 0 52%, var(--orange) 52% 58%, transparent 58% 70%, var(--orange) 70% 76%, transparent 76%);
 }
-.term .c { display: block; white-space: pre; color: var(--tx); }
-.term .c::before { content: "$ "; color: var(--dim); user-select: none; }
-.term .o { display: block; white-space: pre; color: var(--rx); }
-.term .m { display: block; white-space: pre; color: var(--muted); }
-.term .gap { display: block; height: var(--s2); }
-
-/* layers table */
-
-.tablewrap { overflow-x: auto; margin: var(--s3) 0; scrollbar-width: thin; }
-table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 12px; }
-th, td { text-align: left; vertical-align: top; padding: var(--s2) var(--s3) var(--s2) 0; border-bottom: 1px solid var(--rule-2); }
-th { font-weight: 400; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); border-bottom-color: var(--rule); }
-td.n { color: var(--dim); width: 3.5ch; font-variant-numeric: tabular-nums; }
-td.l { color: var(--text); white-space: nowrap; }
-td.s { color: var(--muted); }
-
-.rules { margin: var(--s3) 0; padding: 0; list-style: none; display: grid; gap: var(--s2); max-width: 66ch; }
-.rules li { display: grid; grid-template-columns: 4ch 1fr; color: var(--muted); }
-.rules li::before { content: "rx"; color: var(--rx); }
-.rules li b { color: var(--text); font-weight: 400; }
-
-/* manual */
-
-.man h1 { margin-top: 0; font-size: 12px; letter-spacing: .02em; font-weight: 400; color: var(--muted); display: flex; justify-content: space-between; gap: var(--s4); flex-wrap: wrap; }
-.man section { margin: var(--s5) 0 0; }
-.man h3 { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 var(--s2); color: var(--text); font-weight: 700; }
-.man p { margin: 0 0 var(--s3); max-width: 66ch; color: var(--text); }
-.man p.in, .man .term { margin-left: var(--s5); }
-.man .term { margin-right: 0; }
-.man .toc { color: var(--muted); display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); margin: var(--s3) 0 0; }
-
-/* feed */
-
-.post {
-  border-left: 2px solid var(--rule);
-  padding: var(--s2) 0 var(--s2) var(--s3);
-  margin: var(--s4) 0;
-}
-.post .meta { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.post .meta b { color: var(--rx); font-weight: 400; }
-.post .body { font-family: var(--human); font-size: 17px; line-height: 1.5; margin-top: var(--s1); max-width: 62ch; overflow-wrap: anywhere; }
-.post .tally { color: var(--dim); font-size: 11px; margin-top: var(--s1); }
-
-details { margin: var(--s4) 0; }
-summary { cursor: pointer; color: var(--muted); }
-summary:hover { color: var(--text); }
-.hexwrap { overflow-x: auto; border-left: 2px solid var(--rule); padding: var(--s2) 0 var(--s2) var(--s3); margin: var(--s2) 0; scrollbar-width: thin; }
-.hex { white-space: pre; font-size: 12px; color: var(--rx); margin: 0; }
-.hex .off { color: var(--dim); }
-.hex .asc { color: var(--text); }
-
-footer {
-  max-width: 86ch;
-  margin: 0 auto;
-  padding-block: var(--s4) var(--s5);
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  border-top: 1px solid var(--rule);
-  color: var(--dim);
-  font-size: 11px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1) var(--s4);
-  justify-content: space-between;
+:root[data-pal="sketch"] .grip, :root[data-pal="mixed"] .grip {
+  background: linear-gradient(135deg, transparent 0 52%, #0A0A0A 52% 58%, transparent 58% 70%, #0A0A0A 70% 76%, transparent 76%);
 }
 
-@media (max-width: 560px) {
-  .man p.in, .man .term { margin-left: 0; }
+/* ---------- content ---------- */
+.cmd { display: block; white-space: pre; color: var(--cmd); }
+.cmd::before { content: "$ "; color: var(--muted); user-select: none; }
+.rep { display: block; white-space: pre; color: var(--reply); }
+.note { display: block; white-space: pre; color: var(--muted); }
+.gap { display: block; height: 8px; }
+.code { overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+p { margin: 0 0 8px; }
+
+.head { display: flex; flex-direction: column; justify-content: center; gap: 6px; height: 100%; padding: 10px 18px 14px; }
+.head h1 { margin: 0; font-weight: 800; font-size: clamp(22px, 4.4vw, 40px); letter-spacing: .3em; line-height: 1; }
+.head h1 i { font-style: normal; color: var(--orange); }
+:root[data-pal="sketch"] .head h1 i, :root[data-pal="mixed"] .head h1 i { color: var(--orange-ink); }
+.head p { margin: 0; color: var(--muted); max-width: 60ch; }
+.ctl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+.ctl button {
+  font: inherit; background: none; border: 0; padding: 2px 0; color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent;
 }
-@media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
+.ctl button::before { content: "$ "; opacity: .6; }
+.ctl button:hover { color: var(--ink); }
+.ctl button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--orange); }
+.ctl .sep { color: var(--muted); }
+
+.post { padding: 8px 0 8px 12px; border-left: 3px solid var(--orange); margin: 0 0 12px; }
+.post .m { font-size: 11px; color: var(--muted); }
+.post .m b { font-weight: 500; color: var(--cmd); }
+.post .t { font-family: var(--serif); font-size: 17px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
+
+.limits { display: grid; grid-template-columns: max-content 1fr; gap: 2px 18px; }
+.limits dt { color: var(--muted); }
+.limits dd { margin: 0; }
+
+.layers { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 460px; }
+.layers td { padding: 5px 12px 5px 0; vertical-align: top; border-bottom: 1px solid var(--tile-line); }
+:root[data-pal="sketch"] .layers td { border-bottom-color: #E6E4DE; }
+.layers td:first-child { color: var(--muted); width: 3.5ch; }
+.layers td:nth-child(2) { white-space: nowrap; }
+.layers td:last-child { color: var(--muted); }
+.scroll { overflow-x: auto; scrollbar-width: thin; }
+.chip { display: flex; flex-direction: column; justify-content: center; height: 100%; padding: 0 14px 6px; }
+.chip small { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.chip strong { font-size: clamp(16px, 2.2vw, 24px); font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.chip.on strong { color: var(--cmd); }
+
+/* ---------- narrow screens: plain stack, no dragging ---------- */
+.board.flow { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; height: auto !important; }
+.board.flow .tile { position: static; width: auto !important; height: auto !important; grid-column: 1 / -1; transition: none; }
+.board.flow .tile.small { grid-column: auto; }
+.board.flow .grip { display: none; }
+.board.flow .bar { cursor: default; }
+.board.flow .body { overflow: visible; }
+.board.flow .head, .board.flow .chip { height: auto; padding-top: 14px; }
+
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
 </style>
 </head>
 <body>
 
-<header class="rail">
-  <div class="brand"><b>PACKET</b><span id="tag">preview build</span></div>
-  <dl class="gauge"><dt>host</dt><dd class="off">packet.social</dd></dl>
-  <dl class="gauge"><dt>server</dt><dd id="g-state" class="warn">PREVIEW</dd></dl>
-  <dl class="gauge"><dt>https</dt><dd class="off">443/tcp</dd></dl>
-  <dl class="gauge"><dt>likes</dt><dd class="off">6969/udp</dd></dl>
-  <dl class="gauge"><dt>users</dt><dd id="g-users" class="off">0</dd></dl>
-  <dl class="gauge"><dt>posts</dt><dd id="g-posts" class="off">0</dd></dl>
-  <nav class="nav" aria-label="Pages">
-    <a href="#home" data-view="home">home</a>
-    <a href="#manual" data-view="manual">man</a>
-    <a href="#feed" data-view="feed">get /feed</a>
-  </nav>
-</header>
-
-<main class="page">
-
-  <!-- ===================== HOME ===================== -->
-  <section class="view" id="view-home" aria-labelledby="h-home">
-    <div class="boot">
-      <p class="line sys">PACKET  //  packet.social  //  443/tcp  6969/udp</p>
-      <p class="line sys">tls: handshake complete</p>
-      <p class="line sys">convenience layer: not found</p>
-    </div>
-
-    <p class="code">ERR_ABSTRACTION_NOT_FOUND</p>
-    <h1 id="h-home">A social network you have to learn networking to use.</h1>
-    <p class="lede">There is no sign in button, no feed to scroll and no app to install. You read and write
-      to packet.social from a terminal, one request at a time, with tools already on your computer.
-      If you do not yet know what a header, a port or a status code is, you will by the time you post.</p>
-    <p class="lede">This website is the front door. It tells you how to connect and shows you what people
-      have posted. Everything else happens in your terminal.</p>
-
-    <h2>Connect</h2>
-    <p class="lede">There are no passwords. You make a key pair, and sign every request with the private key.
-      Each curl command is one line: copy all of it, including the web address at the end.
-      Change only the words the comments tell you to change.</p>
-    <div class="term" role="group" aria-label="Example commands">
-      <span class="m"># 1. check that the server is alive</span>
-      <span class="c">curl https://packet.social/status</span>
-      <span class="gap"></span>
-      <span class="m"># 2. make your key pair, once</span>
-      <span class="c">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>
-      <span class="gap"></span>
-      <span class="m"># 3. ask for the registration question. It prints the exact commands to answer it.</span>
-      <span class="c">curl https://packet.social/register</span>
-      <span class="gap"></span>
-      <span class="m"># 4. register: change H= (your handle) and A= (your answer), copy all three lines</span>
-      <span class="c">H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)</span>
-      <span class="c">S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
-      <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>
-      <span class="gap"></span>
-      <span class="m"># 5. read the feed</span>
-      <span class="c">curl https://packet.social/feed</span>
-      <span class="gap"></span>
-      <span class="m"># 6. post: change H= and B=, copy all three lines (the length is counted in bytes)</span>
-      <span class="c">H=yourhandle; B='hello from the wire'; T=$(date +%s)</span>
-      <span class="c">S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
-      <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>
-      <span class="gap"></span>
-      <span class="m"># 7. like post 3 (a UDP datagram, no reply will ever come)</span>
-      <span class="c">echo -n 'LIKE:3' | nc -u -w1 packet.social 6969</span>
-    </div>
-    <p class="note">The manual lists every rule: <a href="#manual">man packet</a>.</p>
-
-    <h2>What you will learn</h2>
-    <p class="lede">Each layer of the network is something you touch directly. Skip a layer and the server will
-      tell you, in its own words, which one you skipped.</p>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th></th><th>layer</th><th>where you meet it</th></tr></thead>
-        <tbody>
-          <tr><td class="n">L7</td><td class="l">application</td><td class="s">Methods, headers, status codes, basic auth, reading a 401.</td></tr>
-          <tr><td class="n">L6</td><td class="l">presentation</td><td class="s">TLS, base64, hex, bytes versus characters.</td></tr>
-          <tr><td class="n">L5</td><td class="l">session</td><td class="s">Keeping a connection open, and what closing it costs you.</td></tr>
-          <tr><td class="n">L4</td><td class="l">transport</td><td class="s">TCP for posts, UDP for likes, and why they behave differently.</td></tr>
-          <tr><td class="n">L3</td><td class="l">network</td><td class="s">Your address, subnets, routes, and what the server sees of you.</td></tr>
-          <tr><td class="n">L2</td><td class="l">data link</td><td class="s">MAC addresses and your local network.</td></tr>
-          <tr><td class="n">L1</td><td class="l">physical</td><td class="s">Your cable, or your radio. Not our problem.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h2>House rules</h2>
-    <ul class="rules">
-      <li><span><b>Bytes, not characters.</b> A post is measured in bytes. Emoji cost more than letters.</span></li>
-      <li><span><b>Nothing is deleted.</b> DELETE returns 405 and always will.</span></li>
-      <li><span><b>No notifications.</b> Nothing is pushed to you. Ask the server when you want to know.</span></li>
-      <li><span><b>Likes are datagrams.</b> You will never know if yours arrived. Neither will they.</span></li>
-      <li><span><b>Be a good packet.</b> Rate limits are real. Past 60 requests a minute you get a 429 and a wait.</span></li>
-    </ul>
-  </section>
-
-  <!-- ===================== MANUAL ===================== -->
-  <section class="view man" id="view-manual" aria-labelledby="h-man" hidden>
-    <h1 id="h-man"><span>PACKET(7)</span><span>hostile networks</span><span>PACKET(7)</span></h1>
-    <p class="toc"><span>NAME</span> <span>SYNOPSIS</span> <span>REGISTERING</span> <span>POSTING</span> <span>READING</span> <span>LIKING</span> <span>LIMITS</span> <span>STATUS CODES</span></p>
-
-    <section>
-      <h3>Name</h3>
-      <p class="in">packet.social, a social network with the convenience layer removed.</p>
-    </section>
-
-    <section>
-      <h3>Synopsis</h3>
-      <div class="term">
-        <span class="c">curl [-H "Handle: ..." -H "Time: ..." -H "Signature: ..."] https://packet.social/PATH</span>
-        <span class="c">echo -n 'LIKE:ID' | nc -u -w1 packet.social 6969</span>
-      </div>
-      <p class="in">All reading and writing is done over HTTPS on port 443, except likes, which are sent
-        as UDP datagrams to port 6969. Responses are plain text. Your terminal decides how they look.</p>
-    </section>
-
-    <section>
-      <h3>Registering</h3>
-      <p class="in">There are no passwords. You make a key pair. The private key stays on your computer and
-        signs every request. The server stores only your public key and checks each signature with it.
-        If you lose the private key, the handle is gone.</p>
-      <div class="term">
-        <span class="c">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>
-      </div>
-      <p class="in">Registration is gated by one simple networking question, so every account belongs to someone
-        who has looked at least one thing up. The answer is in this manual or one command away. A search
-        engine is allowed. This is a lesson, not an exam. Ask for the question. The reply also prints the
-        exact commands to answer it.</p>
-      <div class="term">
-        <span class="c">curl https://packet.social/register</span>
-        <span class="o">question: which port does HTTPS use?</span>
-        <span class="gap"></span>
-        <span class="m"># HTTPS uses 443, so A=443. Change H= to your handle.</span>
-        <span class="c">H=ada; A=443; T=$(date +%s)</span>
-        <span class="c">S=$(printf '%s' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
-        <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>
-        <span class="o">201 Created, then a welcome message</span>
-      </div>
-      <p class="in">Handles are lowercase letters, digits and underscore, up to 20 bytes. Answers are not case
-        sensitive. A question is good for 10 to 20 minutes and is tied to your address. Your question may
-        differ from the example: read it, then answer it. A signed request is valid for 5 minutes, so your
-        clock must be right.</p>
-      <div class="term">
-        <span class="m"># tools for finding answers</span>
-        <span class="c">ping localhost</span>
-        <span class="c">nslookup packet.social</span>
-      </div>
-    </section>
-
-    <section>
-      <h3>Posting</h3>
-      <div class="term">
-        <span class="c">H=ada; B='your words'; T=$(date +%s)</span>
-        <span class="c">S=$(printf '%s' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d '\n')</span>
-        <span class="c">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>
-        <span class="o">201 Created</span>
-      </div>
-      <p class="in">A post may be up to 280 bytes. The signature covers your handle, the time and your exact words,
-        and each signed request works once. Use
-        <span class="tx">--data-binary</span> and not <span class="tx">-d</span>, which strips newlines.
-        Check a length yourself with <span class="tx">printf '%s' 'text' | wc -c</span>.
-        Control characters are refused, so a post cannot rewrite your terminal.</p>
-    </section>
-
-    <section>
-      <h3>Reading</h3>
-      <div class="term">
-        <span class="c">curl https://packet.social/feed</span>
-        <span class="c">curl https://packet.social/post/42</span>
-        <span class="c">curl https://packet.social/profile/rfc1149</span>
-      </div>
-      <p class="in">Reading needs no account. The feed shows the newest 50 posts. Times are seconds since 1970. Turn one into a date with <span class="tx">date -d @1785961012</span>
-        on Linux, or <span class="tx">date -r 1785961012</span> on macOS. Nobody here says "2h ago".</p>
-    </section>
-
-    <section>
-      <h3>Liking</h3>
-      <div class="term">
-        <span class="c">echo -n 'LIKE:42' | nc -u -w1 packet.social 6969</span>
-      </div>
-      <p class="in">UDP has no delivery report, no retry and no reply. The server counts the datagrams that
-        reach it. Read the post again later to see if yours was one of them.</p>
-    </section>
-
-    <section>
-      <h3>Limits</h3>
-      <div class="term">
-        <span class="m">post size        280 bytes</span>
-        <span class="m">requests         60 per minute per address</span>
-        <span class="m">posts            20 per 10 minutes per handle</span>
-        <span class="m">registering      5 attempts per hour per address</span>
-        <span class="m">likes            1 per post per address</span>
-        <span class="m">http redirect    port 80 forwards to 443</span>
-      </div>
-      <p class="in">Requests over the limit get a 429 and a Retry-After header. Slow down.</p>
-    </section>
-
-    <section>
-      <h3>Status codes</h3>
-      <div class="term">
-        <span class="o">200 OK                    request worked</span>
-        <span class="o">201 Created               your post or account exists</span>
-        <span class="o">400 Bad Request           you sent something malformed</span>
-        <span class="o">401 Unauthorized          missing or bad signature</span>
-        <span class="o">403 Forbidden             wrong registration answer</span>
-        <span class="o">404 Not Found             no such post or profile</span>
-        <span class="o">405 Method Not Allowed    DELETE and PUT do not exist</span>
-        <span class="o">409 Conflict              that handle is taken</span>
-        <span class="o">413 Payload Too Large     over 280 bytes</span>
-        <span class="o">429 Too Many Requests     slow down</span>
-      </div>
-    </section>
-
-    <p class="note">The full list of rules is also at <a href="#home">home</a>. Posts are visible at <a href="#feed">get /feed</a>.</p>
-  </section>
-
-  <!-- ===================== FEED ===================== -->
-  <section class="view" id="view-feed" aria-labelledby="h-feed" hidden>
-    <h2 id="h-feed" style="margin-top:0;border-top:0;padding-top:0">Feed, read only</h2>
-    <div class="term">
-      <span class="c">curl https://packet.social/feed</span>
-      <span class="o" id="feed-status">HTTP/1.1 200 OK</span>
-      <span class="o">content-type: text/plain; charset=utf-8</span>
-    </div>
-    <p class="note">You are looking at a window, not a door. Nothing can be posted, liked or deleted from this page.
-      That happens in your terminal. <a href="#manual">man packet</a>.</p>
-    <p class="note" id="feed-sample">Preview build: these five posts are samples, not real people.</p>
-
-    <div id="feed"></div>
-
-    <details>
-      <summary>show the raw octets of this response</summary>
-      <div class="hexwrap"><pre class="hex" id="hex"></pre></div>
-    </details>
-  </section>
-
-</main>
-
-<footer>
-  <span>exit 0</span>
-  <span>packet.social</span>
-  <span id="foot-note">preview build, sample data</span>
-</footer>
+<div class="frame">
+  <div class="board" id="board" aria-label="Movable tiles. Drag a title bar to move a tile and the corner to resize it."></div>
+</div>
 
 <script>
 (function () {
   "use strict";
 
-  /* ---------- sample data (replaced by the real server later) ---------- */
+  var COLS = 10, ROW = 44, GAP = 10, PAD = 0;
 
-  var SAMPLE = [
-    { id: 5, who: "halfopen",    t: 1785961012, likes: 1,
-      text: "Still waiting on that SYN-ACK. I am sure they are busy. I am not going to close the connection." },
-    { id: 4, who: "nagle",       t: 1785957740, likes: 0,
-      text: "I held this post for forty milliseconds before sending it. You are welcome." },
-    { id: 3, who: "mtu_truther", t: 1785953301, likes: 12,
-      text: "Fifteen hundred bytes. Why fifteen hundred. Ask your router what it is not telling you." },
-    { id: 2, who: "bofh",        t: 1785949988, likes: 61,
-      text: "DNS is not down. DNS is a rumor all of you have agreed to believe." },
-    { id: 1, who: "rfc1149",     t: 1785944102, likes: 4,
-      text: "Held one TCP connection open for nineteen days to see who would blink first. The router did." }
+  /* ---------- tile content ---------- */
+  var TILES = {
+    head: { title: "packet.social", html:
+      '<div class="head"><h1>PACK<i>E</i>T</h1>' +
+      '<p>A social network you have to learn networking to use.</p>' +
+      '<div class="ctl" role="group" aria-label="Palette and layout">' +
+      '<button type="button" data-pal="black">black</button>' +
+      '<button type="button" data-pal="sketch">sketch</button>' +
+      '<button type="button" data-pal="mixed">mixed</button>' +
+      '<span class="sep">|</span>' +
+      '<button type="button" data-act="reset">reset layout</button></div></div>', bare: true },
+
+    connect: { title: "connect", html:
+      '<p>No passwords. You make a key pair and sign each request. Every command is one line: copy all of it, including the web address.</p><div class="code">' +
+      '<span class="note"># 1. is the server alive?</span>' +
+      '<span class="cmd">curl https://packet.social/status</span>' +
+      '<span class="gap"></span>' +
+      '<span class="note"># 2. make your key pair, once</span>' +
+      '<span class="cmd">ssh-keygen -t ed25519 -f ~/.ssh/packet_social</span>' +
+      '<span class="gap"></span>' +
+      '<span class="note"># 3. ask for the registration question. It prints the commands to answer it.</span>' +
+      '<span class="cmd">curl https://packet.social/register</span>' +
+      '<span class="gap"></span>' +
+      '<span class="note"># 4. read the feed</span>' +
+      '<span class="cmd">curl https://packet.social/feed</span></div>' },
+
+    feed: { title: "get /feed", html:
+      '<p class="note" id="feed-note" style="white-space:normal">Sample posts, loading the live feed.</p><div id="feed"></div>' },
+
+    register: { title: "register", html:
+      '<p>Answer the question from step 3. Change H= (your handle) and A= (your answer), then copy all three lines. Answers are not case sensitive.</p><div class="code">' +
+      '<span class="cmd">H=yourhandle; A=YOUR_ANSWER; T=$(date +%s)</span>' +
+      '<span class="cmd">S=$(printf \'%s\' "register $H $T" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
+      '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" -d "answer=$A" --data-urlencode "pubkey=$(cat ~/.ssh/packet_social.pub)" https://packet.social/register</span>' +
+      '<span class="rep">201 Created, then a welcome message</span></div>' +
+      '<p class="note" style="white-space:normal;margin-top:8px">Handles are lowercase letters, digits and underscore, up to 20. There is no key recovery, so back up ~/.ssh/packet_social.</p>' },
+
+    post: { title: "post", html:
+      '<p>Change H= (your handle) and B= (your words), then copy all three lines. Posts are 280 bytes at most.</p><div class="code">' +
+      '<span class="cmd">H=yourhandle; B=\'hello from the wire\'; T=$(date +%s)</span>' +
+      '<span class="cmd">S=$(printf \'%s\' "$H $T $B" | ssh-keygen -Y sign -n packet.social -f ~/.ssh/packet_social | base64 | tr -d \'\\n\')</span>' +
+      '<span class="cmd">curl -H "Handle: $H" -H "Time: $T" -H "Signature: $S" --data-binary "$B" https://packet.social/post</span>' +
+      '<span class="rep">201 Created</span></div>' +
+      '<p class="note" style="white-space:normal;margin-top:8px">The signature covers your handle, the time and your exact words, and each signed request works once.</p>' },
+
+    like: { title: "like", html:
+      '<p>A like is one UDP packet to port 6969. Nothing comes back, and that is normal.</p><div class="code">' +
+      '<span class="cmd">echo -n \'LIKE:3\' | nc -u -w1 packet.social 6969</span></div>' +
+      '<p class="note" style="white-space:normal;margin-top:8px">Read the post again to see if it arrived. One like per post per address.</p>' },
+
+    codes: { title: "status codes", html:
+      '<dl class="limits">' +
+      '<dt>200</dt><dd>request worked</dd>' +
+      '<dt>201</dt><dd>post or account exists</dd>' +
+      '<dt>400</dt><dd>something malformed</dd>' +
+      '<dt>401</dt><dd>missing or bad signature</dd>' +
+      '<dt>403</dt><dd>wrong registration answer</dd>' +
+      '<dt>404</dt><dd>no such post or profile</dd>' +
+      '<dt>405</dt><dd>nothing is ever deleted</dd>' +
+      '<dt>409</dt><dd>handle is taken</dd>' +
+      '<dt>413</dt><dd>over 280 bytes</dd>' +
+      '<dt>429</dt><dd>slow down, then retry</dd></dl>' },
+
+    limits: { title: "limits", html:
+      '<dl class="limits">' +
+      '<dt>post size</dt><dd>280 bytes</dd>' +
+      '<dt>requests</dt><dd>60 per minute per address</dd>' +
+      '<dt>posts</dt><dd>20 per 10 minutes per handle</dd>' +
+      '<dt>registering</dt><dd>5 attempts per hour</dd>' +
+      '<dt>likes</dt><dd>1 per post per address</dd>' +
+      '<dt>signed request</dt><dd>valid for 5 minutes</dd>' +
+      '<dt>feed</dt><dd>newest 50 posts</dd></dl>' +
+      '<p class="note" style="white-space:normal;margin-top:8px">Over a limit you get a 429 and a Retry-After header.</p>' },
+
+    learn: { title: "what you will learn", html:
+      '<div class="scroll"><table class="layers"><tbody>' +
+      '<tr><td>L7</td><td>application</td><td>Methods, headers, status codes, signed requests, reading a 401.</td></tr>' +
+      '<tr><td>L6</td><td>presentation</td><td>TLS, base64, hex, bytes versus characters.</td></tr>' +
+      '<tr><td>L5</td><td>session</td><td>Keeping a connection open, and what closing it costs you.</td></tr>' +
+      '<tr><td>L4</td><td>transport</td><td>TCP for posts, UDP for likes, and why they behave differently.</td></tr>' +
+      '<tr><td>L3</td><td>network</td><td>Your address, subnets, routes, and what the server sees of you.</td></tr>' +
+      '<tr><td>L2</td><td>data link</td><td>MAC addresses and your local network.</td></tr>' +
+      '<tr><td>L1</td><td>physical</td><td>Your cable, or your radio. Not our problem.</td></tr>' +
+      '</tbody></table></div>' },
+
+    c1: { title: "users", chip: ["users", "..."], id: "g-users" },
+    c2: { title: "posts", chip: ["posts", "..."], id: "g-posts" },
+    c3: { title: "https", chip: ["https", "443/tcp"] },
+    c4: { title: "likes", chip: ["likes", "6969/udp"] },
+    c5: { title: "server", chip: ["server", "..."], id: "g-state" }
+  };
+
+  var DEFAULT = [
+    { id: "head",     x: 0, y: 0,  w: 10, h: 3 },
+    { id: "connect",  x: 0, y: 3,  w: 5,  h: 6 },
+    { id: "feed",     x: 5, y: 3,  w: 5,  h: 6 },
+    { id: "register", x: 0, y: 9,  w: 5,  h: 5 },
+    { id: "post",     x: 5, y: 9,  w: 5,  h: 5 },
+    { id: "like",     x: 0, y: 14, w: 5,  h: 4 },
+    { id: "limits",   x: 5, y: 14, w: 5,  h: 5 },
+    { id: "codes",    x: 0, y: 18, w: 5,  h: 6 },
+    { id: "learn",    x: 5, y: 19, w: 5,  h: 6 },
+    { id: "c1",       x: 0, y: 25, w: 2,  h: 2 },
+    { id: "c2",       x: 2, y: 25, w: 2,  h: 2 },
+    { id: "c3",       x: 4, y: 25, w: 2,  h: 2 },
+    { id: "c4",       x: 6, y: 25, w: 2,  h: 2 },
+    { id: "c5",       x: 8, y: 25, w: 2,  h: 2 }
   ];
 
-  var posts = SAMPLE;
+  var MIN = { head: [4, 2], c1: [1, 2], c2: [1, 2], c3: [1, 2], c4: [1, 2], c5: [1, 2] };
 
-  /* ---------- helpers ---------- */
+  var board = document.getElementById("board");
+  var items = [];
+  var els = {};
+  var flow = false;
+  var colW = 80;
 
-  function el(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text !== undefined) n.textContent = text;
-    return n;
+  /* ---------- storage (per viewer, optional) ---------- */
+  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function save(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* storage unavailable */ } }
+
+  function clone(a) { return a.map(function (i) { return { id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }; }); }
+
+  function restore() {
+    var raw = load("packet-board-v2"), saved = null;
+    if (raw) { try { saved = JSON.parse(raw); } catch (e) { saved = null; } }
+    var ok = saved && saved.length === DEFAULT.length && saved.every(function (s) { return TILES[s.id] && isFinite(s.x + s.y + s.w + s.h); });
+    items = clone(ok ? saved : DEFAULT);
   }
 
-  function pad(n, w) { return ("00000000" + n.toString(16)).slice(-w); }
+  /* ---------- layout engine ---------- */
+  function minOf(id) { return MIN[id] || [2, 3]; }
+  function hit(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+  function byId(id) { return items.filter(function (i) { return i.id === id; })[0]; }
 
-  function hexdump(str) {
-    var b = new TextEncoder().encode(str);
-    var out = document.createDocumentFragment();
-    for (var i = 0; i < b.length; i += 16) {
-      var chunk = b.subarray(i, i + 16), h = "", a = "";
-      for (var j = 0; j < 16; j++) {
-        if (j === 8) h += " ";
-        if (j < chunk.length) {
-          h += ("0" + chunk[j].toString(16)).slice(-2) + " ";
-          a += (chunk[j] >= 32 && chunk[j] < 127) ? String.fromCharCode(chunk[j]) : ".";
-        } else { h += "   "; }
+  function push(mover, depth) {
+    if (depth > 40) return;
+    items.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (o) {
+      if (o !== mover && hit(mover, o)) {
+        o.y = mover.y + mover.h;
+        push(o, depth + 1);
       }
-      var off = el("span", "off", pad(i, 8));
-      var asc = el("span", "asc", "|" + a + "|");
-      out.appendChild(off);
-      out.appendChild(document.createTextNode("  " + h + " "));
-      out.appendChild(asc);
-      out.appendChild(document.createTextNode("\n"));
-    }
-    out.appendChild(el("span", "off", pad(b.length, 8)));
-    return out;
+    });
   }
 
-  function isoDate(t) {
-    return new Date(t * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  function compact(fixed) {
+    items.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (it) {
+      if (it === fixed) return;
+      while (it.y > 0) {
+        it.y -= 1;
+        if (items.some(function (o) { return o !== it && hit(it, o); })) { it.y += 1; break; }
+      }
+    });
   }
 
-  /* ---------- render feed ---------- */
+  function settle(mover) { push(mover, 0); compact(mover); }
 
-  function renderFeed() {
-    var box = document.getElementById("feed");
+  /* ---------- rendering ---------- */
+  function build() {
+    board.textContent = "";
+    els = {};
+    items.forEach(function (it) {
+      var t = TILES[it.id];
+      var el = document.createElement("section");
+      el.className = "tile" + (t.chip ? " small" : "");
+      el.dataset.id = it.id;
+      var bar = document.createElement("div");
+      bar.className = "bar";
+      bar.tabIndex = 0;
+      bar.setAttribute("role", "button");
+      bar.setAttribute("aria-label", "Move " + t.title + ". Arrow keys move, shift and arrow keys resize.");
+      bar.innerHTML = "<b></b><span class=\"dots\">::</span>";
+      bar.firstChild.textContent = t.title;
+      var body = document.createElement("div");
+      body.className = "body";
+      if (t.chip) {
+        body.innerHTML = '<div class="chip' + (t.on ? " on" : "") + '"><strong></strong></div>';
+        body.querySelector("strong").textContent = t.chip[1];
+        if (t.id) body.querySelector("strong").id = t.id;
+        body.style.padding = "0";
+      } else {
+        body.innerHTML = t.html;
+        if (t.bare) body.style.padding = "0";
+      }
+      var grip = document.createElement("div");
+      grip.className = "grip";
+      grip.setAttribute("aria-hidden", "true");
+      el.appendChild(bar); el.appendChild(body); el.appendChild(grip);
+      board.appendChild(el);
+      els[it.id] = el;
+      wire(it.id, bar, grip);
+    });
+    document.querySelectorAll("[data-pal]").forEach(function (b) {
+      b.addEventListener("click", function () { setPal(b.getAttribute("data-pal")); });
+    });
+    var rb = document.querySelector("[data-act=reset]");
+    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v2", JSON.stringify(items)); layout(); });
+    markPal();
+  }
+
+  function px(it) {
+    return { left: PAD + it.x * (colW + GAP), top: PAD + it.y * (ROW + GAP), width: it.w * colW + (it.w - 1) * GAP, height: it.h * ROW + (it.h - 1) * GAP };
+  }
+
+  function place(el, it) {
+    var p = px(it);
+    el.style.left = p.left + "px"; el.style.top = p.top + "px";
+    el.style.width = p.width + "px"; el.style.height = p.height + "px";
+  }
+
+  function layout(skip) {
+    var w = board.clientWidth;
+    flow = window.innerWidth < 720;
+    board.classList.toggle("flow", flow);
+    if (flow) { board.style.height = ""; Object.keys(els).forEach(function (k) { els[k].style.cssText = ""; }); return; }
+    colW = (w - PAD * 2 - GAP * (COLS - 1)) / COLS;
+    var rows = 0;
+    items.forEach(function (it) {
+      rows = Math.max(rows, it.y + it.h);
+      if (it.id !== skip) place(els[it.id], it);
+    });
+    board.style.height = (rows * (ROW + GAP) - GAP + PAD * 2) + "px";
+  }
+
+  /* ---------- pointer drag and resize ---------- */
+  function wire(id, bar, grip) {
+    var el = els[id];
+
+    bar.addEventListener("pointerdown", function (e) {
+      if (flow || e.button > 0) return;
+      var it = byId(id), r = el.getBoundingClientRect(), b = board.getBoundingClientRect();
+      var dx = e.clientX - r.left, dy = e.clientY - r.top;
+      el.classList.add("live");
+      bar.setPointerCapture(e.pointerId);
+      function move(ev) {
+        var left = ev.clientX - b.left - dx, top = ev.clientY - b.top - dy;
+        el.style.left = left + "px"; el.style.top = top + "px";
+        var nx = Math.max(0, Math.min(COLS - it.w, Math.round((left - PAD) / (colW + GAP))));
+        var ny = Math.max(0, Math.round((top - PAD) / (ROW + GAP)));
+        if (nx !== it.x || ny !== it.y) { it.x = nx; it.y = ny; settle(it); layout(id); }
+      }
+      function up() {
+        bar.removeEventListener("pointermove", move);
+        bar.removeEventListener("pointerup", up);
+        bar.removeEventListener("pointercancel", up);
+        el.classList.remove("live");
+        compact(null);
+        place(el, it);
+        layout();
+        save("packet-board-v2", JSON.stringify(items));
+      }
+      bar.addEventListener("pointermove", move);
+      bar.addEventListener("pointerup", up);
+      bar.addEventListener("pointercancel", up);
+      e.preventDefault();
+    });
+
+    grip.addEventListener("pointerdown", function (e) {
+      if (flow || e.button > 0) return;
+      var it = byId(id), m = minOf(id);
+      var sx = e.clientX, sy = e.clientY, sw = it.w, sh = it.h;
+      el.classList.add("live");
+      grip.setPointerCapture(e.pointerId);
+      function move(ev) {
+        var nw = Math.max(m[0], Math.min(COLS - it.x, sw + Math.round((ev.clientX - sx) / (colW + GAP))));
+        var nh = Math.max(m[1], sh + Math.round((ev.clientY - sy) / (ROW + GAP)));
+        if (nw !== it.w || nh !== it.h) { it.w = nw; it.h = nh; settle(it); layout(); }
+      }
+      function up() {
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        grip.removeEventListener("pointercancel", up);
+        el.classList.remove("live");
+        compact(null);
+        layout();
+        save("packet-board-v2", JSON.stringify(items));
+      }
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+      grip.addEventListener("pointercancel", up);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    bar.addEventListener("keydown", function (e) {
+      if (flow) return;
+      var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      var it = byId(id), m = minOf(id);
+      if (e.shiftKey) {
+        it.w = Math.max(m[0], Math.min(COLS - it.x, it.w + d[0]));
+        it.h = Math.max(m[1], it.h + d[1]);
+      } else {
+        it.x = Math.max(0, Math.min(COLS - it.w, it.x + d[0]));
+        it.y = Math.max(0, it.y + d[1]);
+      }
+      settle(it); layout();
+      save("packet-board-v2", JSON.stringify(items));
+    });
+  }
+
+  /* ---------- palette ---------- */
+  function markPal() {
+    var cur = document.documentElement.getAttribute("data-pal") || "black";
+    document.querySelectorAll("[data-pal]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-pal") === cur ? "true" : "false");
+    });
+  }
+  function setPal(p) {
+    document.documentElement.setAttribute("data-pal", p);
+    save("packet-board-pal", p);
+    markPal();
+  }
+
+  var savedPal = load("packet-board-pal");
+  document.documentElement.setAttribute("data-pal", savedPal === "sketch" || savedPal === "mixed" ? savedPal : "black");
+
+  /* ---------- live data ---------- */
+  var SAMPLE = [
+    { id: 3, who: "mtu_truther", t: 1785953301, likes: 12, text: "Fifteen hundred bytes. Why fifteen hundred. Ask your router what it is not telling you." },
+    { id: 2, who: "bofh", t: 1785949988, likes: 61, text: "DNS is not down. DNS is a rumor all of you have agreed to believe." },
+    { id: 1, who: "rfc1149", t: 1785944102, likes: 4, text: "Held one TCP connection open for nineteen days to see who would blink first. The router did." }
+  ];
+
+  function renderFeed(list, live) {
+    var box = document.getElementById("feed"), note = document.getElementById("feed-note");
+    if (!box) return;
     box.textContent = "";
-    var raw = [];
-    posts.forEach(function (p) {
-      var post = el("article", "post");
-      var meta = el("div", "meta");
-      meta.appendChild(el("span", "", "#" + p.id));
-      meta.appendChild(el("b", "", "@" + p.who));
-      var tm = el("span", "", "t=" + p.t);
-      tm.title = isoDate(p.t);
-      meta.appendChild(tm);
-      post.appendChild(meta);
-      post.appendChild(el("div", "body", p.text));
-      post.appendChild(el("div", "tally",
-        p.likes + " datagrams received on port 6969 (an unknown number were lost)"));
-      box.appendChild(post);
-      raw.push("#" + p.id + " @" + p.who + " t=" + p.t + " likes=" + p.likes + "\n" + p.text);
-    });
-    var hex = document.getElementById("hex");
-    hex.textContent = "";
-    hex.appendChild(hexdump(raw.join("\n\n")));
-
-    if (!posts.length) {
-      box.appendChild(el("p", "note", "No posts yet. Register, then post the first one: man packet."));
+    note.textContent = live ? "Live. This window is read only. Posting happens in your terminal." : "Sample posts. The live feed could not be reached.";
+    if (!list.length) {
+      var p = document.createElement("p");
+      p.className = "note"; p.style.whiteSpace = "normal";
+      p.textContent = "No posts yet. Register, then post the first one.";
+      box.appendChild(p);
+      return;
     }
+    list.forEach(function (it) {
+      var post = document.createElement("div"); post.className = "post";
+      var m = document.createElement("div"); m.className = "m";
+      var b = document.createElement("b"); b.textContent = "@" + it.who;
+      m.appendChild(b);
+      m.appendChild(document.createTextNode(" #" + it.id + " likes=" + it.likes));
+      if (isFinite(it.t)) m.title = new Date(it.t * 1000).toISOString();
+      var t = document.createElement("div"); t.className = "t"; t.textContent = it.text;
+      post.appendChild(m); post.appendChild(t);
+      box.appendChild(post);
+    });
   }
 
-  /* ---------- live status (works once the real server exists) ---------- */
-
-  function setState(txt, cls) {
-    var s = document.getElementById("g-state");
-    s.textContent = txt;
-    s.className = cls;
+  function setChip(id, text, on) {
+    var n = document.getElementById(id);
+    if (!n) return;
+    n.textContent = text;
+    n.parentNode.classList.toggle("on", !!on);
   }
 
-  function loadStatus() {
-    if (!window.fetch || location.protocol === "file:") return;
-    fetch("status.json", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(function (s) {
-        setState("UP", "on");
-        document.getElementById("g-users").textContent = String(s.users);
-        document.getElementById("g-posts").textContent = String(s.posts);
-        document.getElementById("tag").textContent = "live";
-        document.getElementById("foot-note").textContent = "live data";
-      })
-      .catch(function () { /* stay in preview state */ });
-  }
-
-  function loadFeed() {
-    if (!window.fetch || location.protocol === "file:") return;
+  function loadLive() {
+    if (!window.fetch || location.protocol === "file:") { renderFeed(SAMPLE, false); setChip("g-state", "PREVIEW"); return; }
+    renderFeed(SAMPLE, false);
+    fetch("/status.json", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (s) { setChip("g-users", String(s.users)); setChip("g-posts", String(s.posts)); setChip("g-state", "UP", true); })
+      .catch(function () { setChip("g-state", "DOWN"); });
     fetch("/feed.json", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(function (data) {
-        posts = data;
-        document.getElementById("feed-sample").hidden = true;
-        renderFeed();
-      })
-      .catch(function () { /* keep the sample posts */ });
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (list) { renderFeed(list, true); layout(); })
+      .catch(function () { /* keep the sample */ });
   }
 
-  /* ---------- views by hash ---------- */
-
-  var VIEWS = ["home", "manual", "feed"];
-
-  function show() {
-    var name = location.hash.replace("#", "");
-    if (VIEWS.indexOf(name) < 0) name = "home";
-    VIEWS.forEach(function (v) {
-      document.getElementById("view-" + v).hidden = (v !== name);
-    });
-    Array.prototype.forEach.call(document.querySelectorAll(".nav a"), function (a) {
-      if (a.getAttribute("data-view") === name) a.setAttribute("aria-current", "page");
-      else a.removeAttribute("aria-current");
-    });
-    window.scrollTo(0, 0);
-  }
-
-  window.addEventListener("hashchange", show);
-  renderFeed();
-  document.getElementById("g-posts").textContent = String(posts.length);
-  show();
-  loadStatus();
-  loadFeed();
+  restore();
+  build();
+  layout();
+  loadLive();
+  window.addEventListener("resize", function () { layout(); });
+  if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(board);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { layout(); });
 })();
 </script>
 
