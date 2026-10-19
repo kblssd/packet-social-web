@@ -36,6 +36,8 @@ HANDLE_RE = re.compile(r"[a-z0-9_]{1,20}")
 LIKE_RE = re.compile(rb"LIKE:([0-9]{1,12})\n?")
 CLOCK_SKEW = 300          # seconds a signed request stays valid
 NAMESPACE = "packet.social"
+STARTED = time.time()
+RESERVED = {"packet", "admin", "root", "system", "mod", "support", "help", "null", "everyone"}
 
 STATUS = {
     200: "OK", 201: "Created", 400: "Bad Request", 401: "Unauthorized",
@@ -58,6 +60,8 @@ CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   body BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS likes (post_id INTEGER NOT NULL, who TEXT NOT NULL,
                                   t INTEGER NOT NULL, PRIMARY KEY (post_id, who));
+CREATE TABLE IF NOT EXISTS badges (handle TEXT NOT NULL, name TEXT NOT NULL,
+                                   t INTEGER NOT NULL, PRIMARY KEY (handle, name));
 """)
 
 if "pubkey" not in [c[1] for c in db.execute("PRAGMA table_info(users)")]:
@@ -226,9 +230,18 @@ POST_SQL = ("SELECT p.id, p.handle, p.t, p.body, "
 
 
 def counts():
-    users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    users = db.execute("SELECT COUNT(*) FROM users WHERE handle != 'packet'").fetchone()[0]
     posts = db.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
     return users, posts
+
+
+def like_count():
+    return db.execute("SELECT COUNT(*) FROM likes").fetchone()[0]
+
+
+def award(handle, name):
+    db.execute("INSERT OR IGNORE INTO badges (handle, name, t) VALUES (?,?,?)",
+               (handle, name, int(time.time())))
 
 
 # ---------------------------------------------------------------- routes
@@ -249,11 +262,13 @@ def route(method, path, headers, body, ip):
 
     if path == "/status":
         users, posts = counts()
-        text(200, "200 OK\nusers: %d\nposts: %d\n" % (users, posts))
+        text(200, "200 OK\nusers: %d\nposts: %d\nlikes: %d\n" % (users, posts, like_count()))
 
     if path == "/status.json":
         users, posts = counts()
-        raise Reply(200, json.dumps({"users": users, "posts": posts}), ctype="application/json")
+        raise Reply(200, json.dumps({"users": users, "posts": posts, "likes": like_count(),
+                                     "uptime": int(time.time() - STARTED)}),
+                    ctype="application/json")
 
     if path == "/feed" or path == "/feed.json":
         if is_post:
@@ -282,7 +297,10 @@ def route(method, path, headers, body, ip):
         if u is None:
             text(404, "404 Not Found\n")
         n = db.execute("SELECT COUNT(*) FROM posts WHERE handle=?", (m.group(1),)).fetchone()[0]
-        text(200, "handle: %s\njoined: %d\nposts: %d\n" % (m.group(1), u[0], n))
+        badges = [r[0] for r in db.execute(
+            "SELECT name FROM badges WHERE handle=? ORDER BY t", (m.group(1),))]
+        text(200, "handle: %s\njoined: %d\nposts: %d\nbadges: %s\n"
+                  % (m.group(1), u[0], n, ", ".join(badges) or "none"))
 
     if path == "/register":
         if not is_post:
@@ -340,7 +358,7 @@ LIKE post 3 (a UDP packet, nothing prints back):
 
 Posts are 280 bytes at most, and can never be edited or deleted.
 Every signed request is only valid for 5 minutes.
-Stuck? Read the manual: https://packet.social/#manual
+Stuck? Read the guide: https://github.com/kblssd/packet-social-web#readme
 """
 
 
@@ -355,6 +373,8 @@ def register(headers, body, ip):
     handle = headers.get("handle", "")
     if not HANDLE_RE.fullmatch(handle):
         text(400, "400 Bad Request\nhandle: lowercase letters, digits, underscore, 1 to 20 bytes\n")
+    if handle in RESERVED:
+        text(409, "409 Conflict\nhandle is taken\n")
     try:
         form = parse_qs(body.decode("utf-8"))
     except UnicodeDecodeError:
@@ -393,6 +413,7 @@ def create_post(headers, body):
     cur = db.execute("INSERT INTO posts (handle, t, body) VALUES (?,?,?)",
                      (handle, int(time.time()), body))
     pid = cur.lastrowid
+    award(handle, "hard_mode")  # posted with a hand signed request
     log("post %d by %s" % (pid, handle))
     text(201, "201 Created\nlike it: echo -n 'LIKE:%d' | nc -u -w1 packet.social 6969\n" % pid,
          {"Location": "/post/%d" % pid})
