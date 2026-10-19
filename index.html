@@ -306,15 +306,15 @@ p { margin: 0 0 8px; }
 
   var DEFAULT = [
     { id: "head",     x: 0, y: 0,  w: 10, h: 3 },
-    { id: "term",     x: 0, y: 3,  w: 6,  h: 8 },
-    { id: "start",    x: 0, y: 11, w: 6,  h: 8 },
-    { id: "use",      x: 0, y: 19, w: 6,  h: 7 },
+    { id: "term",     x: 0, y: 3,  w: 5,  h: 8 },
+    { id: "start",    x: 0, y: 11, w: 5,  h: 8 },
+    { id: "use",      x: 0, y: 19, w: 5,  h: 7 },
     { id: "activity", x: 0, y: 26, w: 3,  h: 5 },
-    { id: "liked",    x: 3, y: 26, w: 3,  h: 5 },
-    { id: "top",      x: 0, y: 31, w: 3,  h: 9 },
-    { id: "rules",    x: 3, y: 31, w: 3,  h: 9 },
-    { id: "learn",    x: 0, y: 40, w: 6,  h: 5 },
-    { id: "feed",     x: 6, y: 3,  w: 4,  h: 42 },
+    { id: "liked",    x: 3, y: 26, w: 2,  h: 5 },
+    { id: "rules",    x: 0, y: 31, w: 3,  h: 9 },
+    { id: "top",      x: 3, y: 31, w: 2,  h: 9 },
+    { id: "learn",    x: 0, y: 40, w: 5,  h: 5 },
+    { id: "feed",     x: 5, y: 3,  w: 5,  h: 42 },
     { id: "c1",       x: 0, y: 45, w: 2,  h: 2 },
     { id: "c2",       x: 2, y: 45, w: 2,  h: 2 },
     { id: "c3",       x: 4, y: 45, w: 2,  h: 2 },
@@ -337,7 +337,7 @@ p { margin: 0 0 8px; }
   function clone(a) { return a.map(function (i) { return { id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }; }); }
 
   function restore() {
-    var raw = load("packet-board-v4"), saved = null;
+    var raw = load("packet-board-v5"), saved = null;
     if (raw) { try { saved = JSON.parse(raw); } catch (e) { saved = null; } }
     var ok = saved && saved.length === DEFAULT.length && saved.every(function (s) { return TILES[s.id] && isFinite(s.x + s.y + s.w + s.h); });
     items = clone(ok ? saved : DEFAULT);
@@ -409,7 +409,7 @@ p { margin: 0 0 8px; }
       b.addEventListener("click", function () { setPal(b.getAttribute("data-pal")); });
     });
     var rb = document.querySelector("[data-act=reset]");
-    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v4", JSON.stringify(items)); layout(); });
+    if (rb) rb.addEventListener("click", function () { items = clone(DEFAULT); save("packet-board-v5", JSON.stringify(items)); layout(); });
     markPal();
   }
 
@@ -462,7 +462,7 @@ p { margin: 0 0 8px; }
         compact(null);
         place(el, it);
         layout();
-        save("packet-board-v4", JSON.stringify(items));
+        save("packet-board-v5", JSON.stringify(items));
       }
       bar.addEventListener("pointermove", move);
       bar.addEventListener("pointerup", up);
@@ -488,7 +488,7 @@ p { margin: 0 0 8px; }
         el.classList.remove("live");
         compact(null);
         layout();
-        save("packet-board-v4", JSON.stringify(items));
+        save("packet-board-v5", JSON.stringify(items));
       }
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
@@ -511,7 +511,7 @@ p { margin: 0 0 8px; }
         it.y = Math.max(0, it.y + d[1]);
       }
       settle(it); layout();
-      save("packet-board-v4", JSON.stringify(items));
+      save("packet-board-v5", JSON.stringify(items));
     });
   }
 
