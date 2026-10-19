@@ -26,6 +26,7 @@ HTTP_PORT = int(os.environ.get("PACKET_HTTP_PORT", "8080"))
 UDP_HOST = os.environ.get("PACKET_UDP_HOST", "0.0.0.0")
 UDP_PORT = int(os.environ.get("PACKET_UDP_PORT", "6969"))
 PUBLIC_IP = os.environ.get("PACKET_IP", "46.101.187.251")
+TREASURE_PATH = os.environ.get("PACKET_TREASURE", "/var/lib/packet/treasure.json")
 
 MAX_POST = 280            # bytes
 MAX_FEED = 50             # posts returned by /feed
@@ -62,6 +63,8 @@ CREATE TABLE IF NOT EXISTS likes (post_id INTEGER NOT NULL, who TEXT NOT NULL,
                                   t INTEGER NOT NULL, PRIMARY KEY (post_id, who));
 CREATE TABLE IF NOT EXISTS badges (handle TEXT NOT NULL, name TEXT NOT NULL,
                                    t INTEGER NOT NULL, PRIMARY KEY (handle, name));
+CREATE TABLE IF NOT EXISTS treasure_solves (week INTEGER NOT NULL, handle TEXT NOT NULL,
+                                            t INTEGER NOT NULL, PRIMARY KEY (week, handle));
 """)
 
 if "pubkey" not in [c[1] for c in db.execute("PRAGMA table_info(users)")]:
@@ -244,6 +247,76 @@ def award(handle, name):
                (handle, name, int(time.time())))
 
 
+# ---------------------------------------------------------------- treasure hunt
+# The hunt lives in one JSON file made by treasure_make.py on the owner's computer.
+# The server holds the locked file, clues 1 to 3 and a salted hash of the password.
+# It never holds the wallet keys, the password, or clue 4 (that one lives in DNS).
+
+def load_treasure():
+    try:
+        with open(TREASURE_PATH) as f:
+            t = json.load(f)
+        int(t["week"]); t["clues"][2]; t["chest"]; t["hash"]; t["salt"]
+        return t
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
+def check_passphrase(t, phrase):
+    try:
+        got = hashlib.scrypt(phrase.encode(), salt=bytes.fromhex(t["salt"]),
+                             n=2 ** 14, r=8, p=1, dklen=32)
+        return hmac.compare_digest(got, bytes.fromhex(t["hash"]))
+    except (ValueError, KeyError):
+        return False
+
+
+def treasure_winner(week):
+    r = db.execute("SELECT handle FROM treasure_solves WHERE week=? ORDER BY t, rowid LIMIT 1",
+                   (week,)).fetchone()
+    return r[0] if r else None
+
+
+def treasure_record(week, handle):
+    """Record a correct password. Returns True if this is the first solve of the week."""
+    first = treasure_winner(week) is None
+    db.execute("INSERT OR IGNORE INTO treasure_solves (week, handle, t) VALUES (?,?,?)",
+               (week, handle, int(time.time())))
+    return first and treasure_winner(week) == handle
+
+
+def treasure_intro(t):
+    lines = ["packet.social treasure hunt, week %d" % int(t["week"]), ""]
+    if t.get("prize"):
+        lines.append("prize: %s" % t["prize"])
+    lines += [
+        "A wallet's keys are locked inside a file. Open it first, move the coins, keep them.",
+        "",
+        "1. get the locked file:   curl -O https://packet.social/treasure/chest.enc",
+        "2. unlock it:            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -a -in chest.enc",
+        "3. the password is 4 clues joined in order with nothing between them.",
+        "   each clue is 8 characters: lowercase letters a to z and digits 2 to 7.",
+        "",
+    ]
+    for i, h in enumerate(t.get("hints", []), 1):
+        lines.append("clue %d: %s" % (i, h))
+    lines += ["", "Opened it? Prove it in the SSH app with: claim <password>", ""]
+    return "\n".join(lines)
+
+
+def treasure_route(method, path):
+    t = load_treasure()
+    if t is None:
+        text(404, "404 Not Found\nno treasure hunt is running right now\n")
+    if path == "/treasure/chest.enc":
+        if method not in ("GET", "HEAD"):
+            text(405, "405 Method Not Allowed\n", {"Allow": "GET, HEAD"})
+        text(200, t["chest"].strip() + "\n")
+    if method in ("GET", "HEAD"):
+        text(200, treasure_intro(t), {"X-Clue-1": t["clues"][0]})
+    text(405, "405 Method Not Allowed\n", {"Allow": "GET, HEAD", "X-Clue-3": t["clues"][2]})
+
+
 # ---------------------------------------------------------------- routes
 
 class Reply(Exception):
@@ -256,6 +329,9 @@ def text(code, body="", headers=None):
 
 
 def route(method, path, headers, body, ip):
+    if path in ("/treasure", "/treasure/chest.enc"):
+        return treasure_route(method, path)
+
     if method not in ("GET", "HEAD", "POST"):
         text(405, "405 Method Not Allowed\n", {"Allow": "GET, HEAD, POST"})
     is_post = method == "POST"

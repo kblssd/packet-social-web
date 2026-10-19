@@ -84,6 +84,11 @@ Every day a bot called `@packet` posts a networking challenge. Answer it with `p
 
 **Badges:** `first_post`, `first_like`, and `hard_mode` for a post sent with a hand signed request.
 
+**Treasure hunt.** Some weeks a prize is locked in a wallet file. The password is split into four
+clues, and each clue needs a networking tool to find. Start with `curl -i https://packet.social/treasure`
+or type `treasure` in the app. When you open the file, prove it with `claim <password>`.
+You get a badge, and the first person to claim is announced by `@packet`.
+
 ---
 
 ## 1. What you need for hard mode
@@ -547,6 +552,7 @@ This section is for people who want to host a copy. You do not need it to use pa
 | `index.html` | The landing page: status, live numbers and how to connect. One file. |
 | `server.py` | The HTTP and UDP server. Python standard library only. |
 | `sshapp.py` | The SSH app. Needs the `python3-asyncssh` package. Shares the database with `server.py`. |
+| `treasure_make.py` | Makes one week of the treasure hunt. Run on your own computer, never the server. |
 | `backup.py` | Nightly database backup. |
 | `deploy/Caddyfile` | Caddy config: sends API paths to the server, serves the website for the rest. |
 | `deploy/packet.service` | systemd unit that runs the HTTP and UDP server. |
@@ -599,6 +605,7 @@ curl http://127.0.0.1:8080/register
 | `PACKET_SSH_HOST` | `0.0.0.0` | SSH app listen address. |
 | `PACKET_SSH_PORT` | `2222` | SSH app port. Use 22 only after moving your own admin SSH elsewhere. |
 | `PACKET_SSH_HOST_KEY` | `/var/lib/packet/ssh_host_key` | The server's own SSH identity. Created on first start. Back it up, or users see a changed host key warning. |
+| `PACKET_TREASURE` | `/var/lib/packet/treasure.json` | The current treasure hunt file. No file means no hunt. |
 | `PACKET_IP` | `46.101.187.251` | The server's public IP, used for one registration question. Set it to yours in `deploy/packet.service`. |
 
 ### Deploy on a small VPS (Ubuntu 24.04)
@@ -644,6 +651,22 @@ cd /opt/packet-social-web && git pull && bash deploy/install.sh
 journalctl -u packet -f        # HTTP and UDP server
 journalctl -u packet-ssh -f    # SSH app
 ```
+
+### Running a treasure hunt
+
+The server never holds the wallet keys. On your own computer:
+
+```
+python3 treasure_make.py keys.txt --week 1 --prize "0.01 ETH"
+```
+
+`keys.txt` holds the wallet's keys. The script locks them with a random 4 part password and writes
+`treasure.json`, which holds only the locked file, clues 1 to 3 and a salted hash of the password. It
+prints clue 4, which you add as a DNS TXT record at `treasure.packet.social`, and the `scp` command to
+copy the file to `/var/lib/packet/treasure.json`. Within 30 minutes `@packet` announces the hunt.
+Use a fresh wallet that holds only the prize, fund it after the hunt is live, and delete `keys.txt`.
+Players unlock the file with `openssl`, and the coins go to whoever moves them first. For a new week,
+run the script again with a higher `--week`.
 
 ### Backups and restore
 

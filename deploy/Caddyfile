@@ -1,7 +1,7 @@
 packet.social, www.packet.social {
 	encode gzip
 
-	@api path /status /status.json /register /feed /feed.json /post /post/* /profile/*
+	@api path /status /status.json /register /feed /feed.json /post /post/* /profile/* /treasure /treasure/*
 	handle @api {
 		reverse_proxy 127.0.0.1:8080
 	}

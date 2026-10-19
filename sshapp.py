@@ -8,6 +8,7 @@ server recognises your key. Needs the python3-asyncssh package.
 This process shares the SQLite database and the helper functions of server.py.
 """
 import asyncio
+import base64
 import hmac
 import os
 import re
@@ -71,6 +72,8 @@ BADGE_TEXT = {
     "first_post": "first post from the terminal",
     "first_like": "first like",
     "hard_mode": "hard mode: posted with a hand signed request",
+    "treasure_solver": "treasure hunt: opened the chest",
+    "treasure_winner": "treasure hunt: first to open the chest",
 }
 
 HELP = [
@@ -82,11 +85,13 @@ HELP = [
     ("profile [name]", "a person (default: you)"),
     ("learn", "today's challenge and the learning ladder"),
     ("netinfo", "what the network shows about this connection"),
+    ("treasure", "this week's treasure hunt"),
+    ("claim PASSWORD", "enter the treasure password"),
     ("status", "server numbers"),
     ("clear", "clear the screen"),
     ("exit", "disconnect"),
 ]
-GUEST_ONLY = {"post", "like"}  # not allowed for guests
+GUEST_ONLY = {"post", "like", "claim"}  # not allowed for guests
 
 RESERVED_NOTE = "that handle is taken"
 
@@ -124,7 +129,7 @@ def like_id(fp):
 
 
 def todays_challenge():
-    return db.execute("SELECT id, body FROM posts WHERE handle='packet' ORDER BY id DESC LIMIT 1").fetchone()
+    return db.execute("SELECT id, body FROM posts WHERE handle='packet' AND body LIKE 'Challenge #%' ORDER BY id DESC LIMIT 1").fetchone()
 
 
 def post_daily():
@@ -139,10 +144,34 @@ def post_daily():
     core.log("daily challenge %d posted" % n)
 
 
+def post_treasure():
+    """Announce a new hunt once. The post carries clue 2, hidden in base64."""
+    t = core.load_treasure()
+    if not t:
+        return
+    week = int(t["week"])
+    row = db.execute("SELECT v FROM meta WHERE k='treasure_posted'").fetchone()
+    if row and int(bytes(row[0]).decode()) >= week:
+        return
+    clue = base64.b64encode(t["clues"][1].encode()).decode()
+    body = ("Treasure hunt, week %d. A prize is locked in a wallet file. Start here: "
+            "curl -i https://packet.social/treasure   A clue for you: %s" % (week, clue)).encode()
+    assert len(body) <= core.MAX_POST
+    db.execute("INSERT INTO posts (handle, t, body) VALUES ('packet', ?, ?)", (int(time.time()), body))
+    db.execute("INSERT OR REPLACE INTO meta (k, v) VALUES ('treasure_posted', ?)", (str(week).encode(),))
+    core.log("treasure week %d announced" % week)
+
+
+def post_packet(text):
+    db.execute("INSERT INTO posts (handle, t, body) VALUES ('packet', ?, ?)",
+               (int(time.time()), text.encode()))
+
+
 async def daily_loop():
     while True:
         try:
             post_daily()
+            post_treasure()
         except Exception as exc:
             core.log("daily error: %r" % (exc,))
         await asyncio.sleep(1800)
@@ -290,7 +319,8 @@ class Session:
         fn = {
             "help": self.c_help, "?": self.c_help, "feed": self.c_feed, "read": self.c_read,
             "post": self.c_post, "like": self.c_like, "profile": self.c_profile, "whoami": self.c_profile,
-            "learn": self.c_learn, "netinfo": self.c_netinfo, "status": self.c_status,
+            "learn": self.c_learn, "netinfo": self.c_netinfo, "treasure": self.c_treasure,
+            "claim": self.c_claim, "status": self.c_status,
             "clear": self.c_clear, "exit": self.c_exit, "quit": self.c_exit, "logout": self.c_exit,
         }.get(cmd)
         if fn is None:
@@ -434,6 +464,52 @@ class Session:
             self.w("  your key           %s" % self.fp)
         self.w()
         self.w("each line is a lesson: addresses (L3), ports and TCP (L4), SSH encryption (L6).")
+
+    async def c_treasure(self, rest):
+        t = core.load_treasure()
+        if t is None:
+            self.w("no treasure hunt is running right now. Check back soon.")
+            return
+        week = int(t["week"])
+        self.w("treasure hunt, week %d" % week)
+        if t.get("prize"):
+            self.w("  prize     %s" % safe(str(t["prize"]))[:60])
+        win = core.treasure_winner(week)
+        self.w("  status    %s" % ("opened first by @%s" % win if win else "nobody has opened it yet"))
+        self.w()
+        self.w("start in a second terminal on your own computer:")
+        self.w("  curl -i https://packet.social/treasure")
+        self.w("when you open the chest, prove it here with: claim <password>")
+
+    async def c_claim(self, rest):
+        t = core.load_treasure()
+        if t is None:
+            self.w("no treasure hunt is running right now.")
+            return
+        if not rest:
+            self.w("usage: claim <password>")
+            return
+        if not core.allow("claim:" + self.handle, 5, 3600):
+            self.w("429 slow down. 5 tries per hour.")
+            return
+        if not core.check_passphrase(t, rest.strip().lower()):
+            self.w("wrong password. Re-check each clue and the order.")
+            return
+        week = int(t["week"])
+        win = core.treasure_winner(week)
+        if win == self.handle:
+            self.w("you already opened this chest first.")
+            return
+        first = core.treasure_record(week, self.handle)
+        if first:
+            core.award(self.handle, "treasure_winner")
+            post_packet("Treasure hunt week %d: @%s opened the chest first. Well done." % (week, self.handle))
+            self.w("correct. You were first. @packet will announce it.")
+            self.w("badge earned: %s" % BADGE_TEXT["treasure_winner"])
+        else:
+            core.award(self.handle, "treasure_solver")
+            self.w("correct, but @%s was first this week." % win)
+            self.w("badge earned: %s" % BADGE_TEXT["treasure_solver"])
 
     async def c_status(self, rest):
         users, posts = core.counts()
