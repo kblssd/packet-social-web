@@ -256,7 +256,9 @@ class Session:
             line = await self.read("%s@packet:~$ " % who)
             if not line:
                 continue
+            self.w()                      # blank line between your command and the answer
             await self.dispatch(line)
+            self.w()                      # blank line before the next prompt
 
     def banner(self):
         self.w()
@@ -337,7 +339,6 @@ class Session:
         pid, who, t, body, likes = r
         self.w("#%d  @%s  %s  %d like%s" % (pid, who, ago(t), likes, "" if likes == 1 else "s"))
         self.w(self.wrap(bytes(body).decode("utf-8")))
-        self.w()
 
     async def c_feed(self, rest):
         n = FEED_DEFAULT
@@ -350,7 +351,9 @@ class Session:
         if not rows:
             self.w("no posts yet. Be the first: post hello")
             return
-        for r in rows:
+        for i, r in enumerate(rows):
+            if i:
+                self.w()                  # one blank line between posts
             self.show_post(r)
 
     async def c_read(self, rest):
